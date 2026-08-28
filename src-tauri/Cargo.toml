@@ -1,0 +1,27 @@
+[package]
+name = "whittle"
+version = "0.1.0"
+description = "Narrow a video down to a target timespan by iterative, lossless trimming."
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "whittle_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.11", features = [] }
+tauri-plugin-dialog = "2.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
