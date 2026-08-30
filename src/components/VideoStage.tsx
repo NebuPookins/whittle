@@ -4,6 +4,9 @@ import { formatSpan, formatTimecode } from "../core/timecode";
 import type { VideoPlayback } from "../hooks/useVideoPlayback";
 import type { VideoMetadata } from "../types";
 
+/** Selectable playback speeds, slowest first. */
+const SPEEDS = [0.25, 0.5, 1, 1.25, 1.5, 2, 3, 4] as const;
+
 interface Props {
   readonly src: string;
   readonly meta: VideoMetadata;
@@ -21,6 +24,10 @@ export function VideoStage({
   playback,
   onJump,
 }: Props) {
+  const hasAudio = meta.audioCodec !== null;
+  const muted = playback.muted;
+  const muteLabel = muted ? "Unmute" : "Mute";
+
   return (
     <>
       <div className="video-wrap">
@@ -39,7 +46,7 @@ export function VideoStage({
         )}
         <div className="video-badge">
           {meta.width}×{meta.height} · {meta.videoCodec}
-          {meta.audioCodec !== null ? ` + ${meta.audioCodec}` : " · no audio"}
+          {hasAudio ? ` + ${meta.audioCodec}` : " · no audio"}
         </div>
       </div>
 
@@ -92,6 +99,47 @@ export function VideoStage({
             · range {formatTimecode(clip.start)}–{formatTimecode(clip.end)} (
             {formatSpan(clip.end - clip.start)})
           </span>
+        </div>
+
+        <div className="transport__spacer" />
+
+        <div className="transport__volume">
+          <button
+            className="icon"
+            onClick={playback.toggleMute}
+            disabled={!hasAudio}
+            title={hasAudio ? muteLabel : "No audio track"}
+            aria-label={hasAudio ? muteLabel : "No audio track"}
+            aria-pressed={hasAudio ? muted : undefined}
+          >
+            {muted ? "🔇" : "🔊"}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round(playback.volume * 100)}
+            onChange={(e) => playback.setVolume(Number(e.target.value) / 100)}
+            disabled={!hasAudio}
+            aria-label="Volume"
+            title={hasAudio ? "Volume" : "No audio track"}
+          />
+        </div>
+
+        <div className="transport__speed">
+          <select
+            value={String(playback.rate)}
+            onChange={(e) => playback.setRate(Number(e.target.value))}
+            aria-label="Playback speed"
+            title="Playback speed"
+          >
+            {SPEEDS.map((speed) => (
+              <option key={speed} value={String(speed)}>
+                {speed}×
+              </option>
+            ))}
+          </select>
         </div>
       </div>
     </>

@@ -244,7 +244,6 @@ export default function App() {
     if (meta === null) return;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
       const key = e.key.toLowerCase();
 
       if (e.ctrlKey || e.metaKey) {
@@ -262,6 +261,14 @@ export default function App() {
           e.preventDefault();
           void browse();
         }
+        return;
+      }
+
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLSelectElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
         return;
       }
 

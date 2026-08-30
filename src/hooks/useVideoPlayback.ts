@@ -42,6 +42,15 @@ export interface VideoPlayback {
   readonly step: (frames: number) => void;
   /** Why the preview is blank, or `null` while it is fine. */
   readonly failure: MediaFailure | null;
+  /** Loudness from 0 (silent) to 1 (full). */
+  readonly volume: number;
+  /** Whether the element is muted, independent of `volume`. */
+  readonly muted: boolean;
+  readonly setVolume: (v: number) => void;
+  readonly toggleMute: () => void;
+  /** Playback multiplier; 1 is real time. */
+  readonly rate: number;
+  readonly setRate: (r: number) => void;
 }
 
 /**
@@ -66,6 +75,9 @@ export function useVideoPlayback(
   const [element, setElement] = useState<HTMLVideoElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [failure, setFailure] = useState<MediaFailure | null>(null);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [rate, setRate] = useState(1);
 
   // Latest values for the rAF loop and callbacks, without re-subscribing.
   const clipRef = useRef(clip);
@@ -82,6 +94,18 @@ export function useVideoPlayback(
       element.currentTime = playhead;
     }
   }, [element, playhead]);
+
+  // Apply volume and speed to the element. `defaultPlaybackRate` is set in
+  // step with `playbackRate` because the browser resets the rate to it
+  // whenever a new source loads; without it the chosen speed would silently
+  // fall back to 1× on the next file.
+  useEffect(() => {
+    if (element === null) return;
+    element.volume = volume;
+    element.muted = muted;
+    element.playbackRate = rate;
+    element.defaultPlaybackRate = rate;
+  }, [element, volume, muted, rate]);
 
   // Trace the element's state machine into the log file.
   useEffect(() => {
@@ -203,5 +227,26 @@ export function useVideoPlayback(
     [element, frameRate],
   );
 
-  return { attach: setElement, playing, toggle, step, failure };
+  const changeVolume = (v: number) => {
+    setVolume(v);
+    // Raising the volume is an implicit unmute; a slider that cannot be heard
+    // until a second control is touched would be baffling.
+    if (v > 0) setMuted(false);
+  };
+
+  const toggleMute = () => setMuted((m) => !m);
+
+  return {
+    attach: setElement,
+    playing,
+    toggle,
+    step,
+    failure,
+    volume,
+    muted,
+    setVolume: changeVolume,
+    toggleMute,
+    rate,
+    setRate,
+  };
 }

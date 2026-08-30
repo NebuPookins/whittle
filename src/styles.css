@@ -321,6 +321,10 @@ button.icon {
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   letter-spacing: -0.01em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .transport__clock b {
@@ -330,6 +334,44 @@ button.icon {
 
 .transport__clock span {
   color: var(--muted);
+}
+
+.transport__spacer {
+  flex: 1;
+}
+
+.transport__volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.transport__volume input[type="range"] {
+  width: 92px;
+  accent-color: var(--accent);
+}
+
+.transport__speed select {
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.transport__speed select:hover:not(:disabled) {
+  background: #26303d;
+  border-color: #3a475a;
+}
+
+.transport__speed select:focus-visible {
+  outline: 2px solid var(--playhead);
+  outline-offset: 1px;
 }
 
 /* ---------- timeline ---------- */
