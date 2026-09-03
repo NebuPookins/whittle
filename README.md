@@ -62,6 +62,7 @@ Sub-keyframe precision would require re-encoding the boundary GOP. Out of scope.
 | <kbd>←</kbd> <kbd>→</kbd> | Step one frame (<kbd>Shift</kbd> for ten) |
 | <kbd>Home</kbd> <kbd>End</kbd> | Jump to start / end of range |
 | <kbd>I</kbd> / <kbd>O</kbd> | Discard before / after the playhead |
+| <kbd>K</kbd> | Mark keep — pin the playhead as a moment worth keeping |
 | <kbd>Enter</kbd> | Commit trim |
 | <kbd>Esc</kbd> | Clear marks |
 | <kbd>+</kbd> <kbd>−</kbd> <kbd>F</kbd> | Zoom in / out / fit |

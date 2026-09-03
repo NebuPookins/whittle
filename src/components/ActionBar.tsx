@@ -4,6 +4,7 @@ import { formatSpan, formatTimecode } from "../core/timecode";
 export interface ActionHandlers {
   readonly markIn: () => void;
   readonly markOut: () => void;
+  readonly markKeep: () => void;
   readonly commit: () => void;
   readonly clearMarks: () => void;
   readonly undo: () => void;
@@ -117,6 +118,12 @@ export function ActionBar({
           title="Mark the playhead as the new end, discarding everything after it (O)"
         >
           Discard after
+        </button>
+        <button
+          onClick={actions.markKeep}
+          title="Pin the playhead as a moment worth keeping — press again to unpin (K)"
+        >
+          Mark keep
         </button>
 
         <div className="actions__sep" />

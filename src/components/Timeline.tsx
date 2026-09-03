@@ -29,6 +29,7 @@ const C = {
   clipBandEdge: "#f5a623",
   viewBox: "rgba(88, 166, 255, 0.85)",
   playhead: "#58a6ff",
+  keep: "#3fb950",
 } as const;
 
 const RULER_H = 20;
@@ -109,6 +110,7 @@ function drawOverview(
   duration: number,
   clip: Clip,
   view: TimeWindow,
+  keeps: readonly number[],
   playhead: number,
 ): void {
   ctx.clearRect(0, 0, w, h);
@@ -132,6 +134,11 @@ function drawOverview(
     ctx.lineWidth = 1;
     ctx.strokeRect(crisp(vs), 0.5, Math.max(ve - vs, 1), h - 1);
   }
+
+  // Keep pins across the whole file — a glance at where the interesting
+  // moments sit is the whole reason to mark them.
+  ctx.fillStyle = C.keep;
+  for (const t of keeps) ctx.fillRect(crisp(x(t)), 0, 1, 5);
 
   ctx.fillStyle = C.playhead;
   ctx.fillRect(crisp(x(playhead)), 0, 1, h);
@@ -165,6 +172,7 @@ interface Props {
   readonly clip: Clip;
   readonly view: TimeWindow;
   readonly marks: Marks;
+  readonly keeps: readonly number[];
   readonly pending: Clip;
   readonly playhead: number;
   readonly keyframes: readonly number[];
@@ -181,6 +189,7 @@ export function Timeline({
   clip,
   view,
   marks,
+  keeps,
   pending,
   playhead,
   keyframes,
@@ -200,7 +209,7 @@ export function Timeline({
     drawMain(ctx, w, h, view, pending, keyframes, effectiveStart),
   );
   const overviewCanvas = useCanvas(overviewWidth, 34, (ctx, w, h) =>
-    drawOverview(ctx, w, h, duration, clip, view, playhead),
+    drawOverview(ctx, w, h, duration, clip, view, keeps, playhead),
   );
 
   /** Client X -> time, using the track's own box. */
@@ -312,6 +321,13 @@ export function Timeline({
             </div>
           </div>
         )}
+
+        {keeps.filter(visible).map((t) => (
+          <div key={t} className="marker marker--keep" style={{ left: pct(t) }}>
+            <div className="marker__line" />
+            <div className="marker__flag" />
+          </div>
+        ))}
 
         {visible(playhead) && (
           <div className="marker marker--playhead" style={{ left: pct(playhead) }}>

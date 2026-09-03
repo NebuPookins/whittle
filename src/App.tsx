@@ -227,6 +227,7 @@ export default function App() {
     () => ({
       markIn: () => dispatch({ type: "markIn", time: editor.playhead }),
       markOut: () => dispatch({ type: "markOut", time: editor.playhead }),
+      markKeep: () => dispatch({ type: "markKeep", time: editor.playhead }),
       commit: () => dispatch({ type: "commit" }),
       clearMarks: () => dispatch({ type: "clearMarks" }),
       undo: () => dispatch({ type: "undo" }),
@@ -308,6 +309,9 @@ export default function App() {
             case "o":
               actions.markOut();
               break;
+            case "k":
+              actions.markKeep();
+              break;
             case "f":
               actions.fit();
               break;
@@ -387,6 +391,7 @@ export default function App() {
             clip={clip}
             view={editor.view}
             marks={editor.marks}
+            keeps={editor.keeps}
             pending={pending}
             playhead={editor.playhead}
             keyframes={scan.keyframes}

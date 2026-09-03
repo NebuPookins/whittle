@@ -60,6 +60,80 @@ describe("seeking and marking", () => {
   });
 });
 
+describe("keep pins", () => {
+  it("pins a moment without touching marks or the clip", () => {
+    const s = run(fresh(), { type: "seek", time: 42 }, { type: "markKeep", time: 42 });
+    expect(s.keeps).toEqual([42]);
+    expect(s.marks).toEqual({ inPoint: null, outPoint: null });
+    expect(s.history.clip).toEqual({ start: 0, end: 100 });
+  });
+
+  it("pins several distinct moments", () => {
+    const s = run(
+      fresh(),
+      { type: "markKeep", time: 10 },
+      { type: "markKeep", time: 50 },
+      { type: "markKeep", time: 90 },
+    );
+    expect(s.keeps).toEqual([10, 50, 90]);
+  });
+
+  it("toggles a pin off when marked again at the same moment", () => {
+    const s = run(
+      fresh(),
+      { type: "markKeep", time: 10 },
+      { type: "markKeep", time: 50 },
+      { type: "markKeep", time: 10 },
+    );
+    expect(s.keeps).toEqual([50]);
+  });
+
+  it("leaves other pins alone when removing one", () => {
+    const s = run(
+      fresh(),
+      { type: "markKeep", time: 10 },
+      { type: "markKeep", time: 50 },
+      { type: "markKeep", time: 90 },
+      { type: "markKeep", time: 50 },
+    );
+    expect(s.keeps).toEqual([10, 90]);
+  });
+
+  it("keeps the pins inside the narrowed clip and drops the rest", () => {
+    const s = run(
+      fresh(),
+      { type: "markKeep", time: 10 },
+      { type: "markKeep", time: 25 },
+      { type: "markKeep", time: 50 },
+      { type: "markIn", time: 20 },
+      { type: "markOut", time: 30 },
+      { type: "commit" },
+    );
+    expect(s.history.clip).toEqual({ start: 20, end: 30 });
+    expect(s.marks).toEqual({ inPoint: null, outPoint: null });
+    // Pins at 10 and 50 land outside the kept region, so they are dropped
+    // rather than left orphaned where the playhead could never unpin them.
+    expect(s.keeps).toEqual([25]);
+  });
+
+  it("resets when a new file loads", () => {
+    const s = run(fresh(), { type: "markKeep", time: 10 }, { type: "load", duration: 12 });
+    expect(s.keeps).toEqual([]);
+  });
+
+  it("does not disturb keeps when seeking or marking in/out", () => {
+    const s = run(
+      fresh(),
+      { type: "markKeep", time: 10 },
+      { type: "seek", time: 60 },
+      { type: "markIn", time: 60 },
+      { type: "markOut", time: 80 },
+    );
+    expect(s.keeps).toEqual([10]);
+    expect(s.marks).toEqual({ inPoint: 60, outPoint: 80 });
+  });
+});
+
 describe("commit", () => {
   it("narrows the clip to the marked range and resets the view to it", () => {
     const s = run(

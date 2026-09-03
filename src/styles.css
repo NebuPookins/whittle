@@ -454,6 +454,10 @@ button.icon {
   background: var(--accent);
 }
 
+.marker--keep .marker__line {
+  background: var(--ok);
+}
+
 .marker__grip {
   position: absolute;
   top: 0;
@@ -488,6 +492,16 @@ button.icon {
   border-radius: 0;
   clip-path: polygon(0 0, 100% 0, 50% 100%);
   cursor: ew-resize;
+}
+
+.marker--keep .marker__flag {
+  position: absolute;
+  bottom: 0;
+  left: -5px;
+  width: 10px;
+  height: 9px;
+  background: var(--ok);
+  clip-path: polygon(50% 0, 0 100%, 100% 100%);
 }
 
 /* ---------- action bar ---------- */
