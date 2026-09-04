@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Clip } from "../core/clip";
-import { failureFromCode, type MediaFailure } from "../core/media";
+import { errInfo, failureFromCode, failureFromPlayRejection, type MediaFailure } from "../core/media";
 import { logUi } from "../ipc";
 
 /**
@@ -210,10 +210,10 @@ export function useVideoPlayback(
     void element.play().then(
       () => logUi("video", "play() resolved"),
       (reason: unknown) => {
-        const detail = reason instanceof Error ? reason.message : String(reason);
-        const name = reason instanceof Error ? reason.name : "unknown";
+        const { name, detail } = errInfo(reason);
         logUi("video", `play() rejected: ${name}: ${detail}`);
-        setFailure({ kind: "refused", detail });
+        const refusal = failureFromPlayRejection(reason);
+        if (refusal !== null) setFailure(refusal);
       },
     );
   }, [element]);
