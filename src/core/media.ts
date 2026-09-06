@@ -11,6 +11,7 @@ export type MediaFailure =
   | { readonly kind: "network" }
   | { readonly kind: "decode" }
   | { readonly kind: "unreadable" }
+  | { readonly kind: "stalled" }
   | { readonly kind: "refused"; readonly detail: string };
 
 /**
@@ -87,6 +88,8 @@ export function describeFailure(failure: MediaFailure): string {
       return "This video stream cannot be decoded for preview. Trimming still works — it copies the stream without decoding it.";
     case "unreadable":
       return "The preview could not read this file. Trimming still works — it reads the file with ffmpeg rather than the built-in player.";
+    case "stalled":
+      return "The preview stalled before it could show a frame. Trimming still works — it reads the file with ffmpeg rather than the built-in player.";
     case "refused":
       return `The player refused to start: ${failure.detail}`;
   }

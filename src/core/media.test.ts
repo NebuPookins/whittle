@@ -13,6 +13,7 @@ const ALL: readonly MediaFailure[] = [
   { kind: "network" },
   { kind: "decode" },
   { kind: "unreadable" },
+  { kind: "stalled" },
   { kind: "refused", detail: "NotAllowedError" },
 ];
 
@@ -95,7 +96,7 @@ describe("describeFailure", () => {
     // The export path runs ffmpeg and never decodes, so a file the webview
     // cannot show is still perfectly cuttable. Saying otherwise would send
     // someone away from a file that works.
-    for (const failure of [{ kind: "decode" }, { kind: "unreadable" }] as const) {
+    for (const failure of [{ kind: "decode" }, { kind: "unreadable" }, { kind: "stalled" }] as const) {
       expect(describeFailure(failure)).toMatch(/trimming still works/i);
     }
   });

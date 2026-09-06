@@ -33,6 +33,9 @@ const MEDIA_EVENTS = [
 const SYNC_EPSILON = 0.04;
 const FALLBACK_FPS = 25;
 
+/** How long a load may go without a frame before it is declared stalled. */
+const STALL_TIMEOUT_MS = 5000;
+
 export interface VideoPlayback {
   /** Attach to the `<video>` element. */
   readonly attach: (el: HTMLVideoElement | null) => void;
@@ -151,6 +154,41 @@ export function useVideoPlayback(
       element.removeEventListener("error", report);
       element.removeEventListener("loadstart", clear);
       element.removeEventListener("loadeddata", clear);
+    };
+  }, [element]);
+
+  // A load that begins but never delivers a frame — no `error`, no
+  // `loadeddata` — leaves the preview silently blank. Arm a timer on
+  // `loadstart` and cancel it as soon as the load progresses or fails, so a
+  // genuine stall still gets an explanation instead of an empty screen.
+  useEffect(() => {
+    if (element === null) return;
+
+    let timer: number | null = null;
+    const arm = () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(
+        () => setFailure({ kind: "stalled" }),
+        STALL_TIMEOUT_MS,
+      );
+    };
+    const disarm = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    element.addEventListener("loadstart", arm);
+    element.addEventListener("loadeddata", disarm);
+    element.addEventListener("error", disarm);
+    element.addEventListener("abort", disarm);
+    return () => {
+      disarm();
+      element.removeEventListener("loadstart", arm);
+      element.removeEventListener("loadeddata", disarm);
+      element.removeEventListener("error", disarm);
+      element.removeEventListener("abort", disarm);
     };
   }, [element]);
 
