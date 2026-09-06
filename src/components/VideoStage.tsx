@@ -1,4 +1,4 @@
-import type { Clip } from "../core/clip";
+import type { Clip, WaypointDirection } from "../core/clip";
 import { describeFailure } from "../core/media";
 import { formatSpan, formatTimecode } from "../core/timecode";
 import type { VideoPlayback } from "../hooks/useVideoPlayback";
@@ -13,7 +13,7 @@ interface Props {
   readonly clip: Clip;
   readonly playhead: number;
   readonly playback: VideoPlayback;
-  readonly onJump: (t: number) => void;
+  readonly onJump: (direction: WaypointDirection) => void;
 }
 
 export function VideoStage({
@@ -53,9 +53,9 @@ export function VideoStage({
       <div className="transport">
         <button
           className="icon"
-          onClick={() => onJump(clip.start)}
-          title="Jump to start of range (Home)"
-          aria-label="Jump to start of range"
+          onClick={() => onJump("back")}
+          title="Jump to previous waypoint (Home)"
+          aria-label="Jump to previous waypoint"
         >
           ⏮
         </button>
@@ -85,9 +85,9 @@ export function VideoStage({
         </button>
         <button
           className="icon"
-          onClick={() => onJump(clip.end)}
-          title="Jump to end of range (End)"
-          aria-label="Jump to end of range"
+          onClick={() => onJump("forward")}
+          title="Jump to next waypoint (End)"
+          aria-label="Jump to next waypoint"
         >
           ⏭
         </button>

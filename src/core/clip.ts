@@ -120,3 +120,36 @@ export function effectiveCut(
     snapped: !sameTime(kf, clip.start),
   };
 }
+
+/** Which way the transport's skip buttons travel. */
+export type WaypointDirection = "back" | "forward";
+
+/**
+ * Where a skip button lands: the nearest waypoint strictly on the requested
+ * side of `from`, or null when there is none (already at that edge).
+ *
+ * Waypoints are the moments worth hopping between while narrowing — the clip's
+ * own edges, the in/out marks, and the keep pins. Marks and pins are clamped
+ * into the clip and the edges bound it, so every waypoint sits inside the clip.
+ */
+export function nearestWaypoint(
+  clip: Clip,
+  marks: Marks,
+  keeps: readonly number[],
+  from: number,
+  direction: WaypointDirection,
+): number | null {
+  const back = direction === "back";
+  // Skip anything at (or past) the playhead: the "nearest" in a direction is
+  // the first strictly-before / strictly-after waypoint, not the current spot.
+  const eligible = [
+    clip.start,
+    clip.end,
+    marks.inPoint,
+    marks.outPoint,
+    ...keeps,
+  ].filter((t): t is number => t !== null && (back ? t < from : t > from));
+
+  if (eligible.length === 0) return null;
+  return back ? Math.max(...eligible) : Math.min(...eligible);
+}

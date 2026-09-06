@@ -12,7 +12,9 @@ import {
   canUndo,
   effectiveCut,
   hasPendingChange,
+  nearestWaypoint,
   pendingClip,
+  type WaypointDirection,
 } from "./core/clip";
 import { editorReducer, initEditor } from "./core/editor";
 import { basename, splitExtension, suggestExportPath } from "./core/paths";
@@ -89,6 +91,20 @@ export default function App() {
   );
 
   const seek = useCallback((time: number) => dispatch({ type: "seek", time }), []);
+
+  const jump = useCallback(
+    (direction: WaypointDirection) => {
+      const target = nearestWaypoint(
+        clip,
+        editor.marks,
+        editor.keeps,
+        editor.playhead,
+        direction,
+      );
+      if (target !== null) seek(target);
+    },
+    [clip, editor.marks, editor.keeps, editor.playhead, seek],
+  );
 
   const playback = useVideoPlayback(
     clip,
@@ -287,10 +303,10 @@ export default function App() {
           playback.step(e.shiftKey ? 10 : 1);
           break;
         case "Home":
-          seek(clip.start);
+          jump("back");
           break;
         case "End":
-          seek(clip.end);
+          jump("forward");
           break;
         case "Enter":
           // Without this, the browser also synthesises a click on the still-
@@ -329,7 +345,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [meta, actions, playback, seek, clip.start, clip.end, browse]);
+  }, [meta, actions, playback, jump, browse]);
 
   /* ---------- render ---------- */
 
@@ -379,7 +395,7 @@ export default function App() {
             clip={clip}
             playhead={editor.playhead}
             playback={playback}
-            onJump={seek}
+            onJump={jump}
           />
         )}
       </div>

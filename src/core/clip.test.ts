@@ -7,6 +7,7 @@ import {
   hasPendingChange,
   initHistory,
   MIN_CLIP,
+  nearestWaypoint,
   NO_MARKS,
   pendingClip,
   redo,
@@ -145,5 +146,41 @@ describe("effectiveCut", () => {
     const cut = effectiveCut({ start: 1.0, end: 2.0 }, [5.0, 6.0]);
     expect(cut.start).toBe(1.0);
     expect(cut.snapped).toBe(false);
+  });
+});
+
+describe("nearestWaypoint", () => {
+  it("falls back to the clip edges when nothing else is marked", () => {
+    expect(nearestWaypoint(CLIP, NO_MARKS, [], 15, "back")).toBe(10);
+    expect(nearestWaypoint(CLIP, NO_MARKS, [], 15, "forward")).toBe(20);
+  });
+
+  it("prefers the nearest mark over the clip edge", () => {
+    const marks = { inPoint: 14, outPoint: 18 };
+    expect(nearestWaypoint(CLIP, marks, [], 15, "back")).toBe(14);
+    expect(nearestWaypoint(CLIP, marks, [], 15, "forward")).toBe(18);
+  });
+
+  it("hops between keep pins in either direction", () => {
+    expect(nearestWaypoint(CLIP, NO_MARKS, [12, 15, 19], 15, "back")).toBe(12);
+    expect(nearestWaypoint(CLIP, NO_MARKS, [12, 15, 19], 15, "forward")).toBe(19);
+  });
+
+  it("treats every waypoint alike regardless of its kind", () => {
+    // A keep pin at 13 sits between the in-mark and the playhead, so it wins.
+    const marks = { inPoint: 12, outPoint: 18 };
+    expect(nearestWaypoint(CLIP, marks, [13, 17], 15, "back")).toBe(13);
+    expect(nearestWaypoint(CLIP, marks, [13, 17], 15, "forward")).toBe(17);
+  });
+
+  it("ignores a waypoint sitting at the playhead", () => {
+    // The in-mark coincides with the playhead, so the next one back is the edge.
+    expect(nearestWaypoint(CLIP, { inPoint: 15, outPoint: null }, [], 15, "back")).toBe(10);
+    expect(nearestWaypoint(CLIP, { inPoint: 15, outPoint: null }, [], 15, "forward")).toBe(20);
+  });
+
+  it("returns null at the edges when there is nowhere left to go", () => {
+    expect(nearestWaypoint(CLIP, NO_MARKS, [15], 10, "back")).toBeNull();
+    expect(nearestWaypoint(CLIP, NO_MARKS, [15], 20, "forward")).toBeNull();
   });
 });
