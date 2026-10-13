@@ -44,23 +44,6 @@ export function keyframeAtOrAfter(
 }
 
 /**
- * The keyframe a cut at `t` would snap to.
- *
- * Ties go to the *earlier* keyframe: starting a cut earlier keeps footage,
- * starting it later loses footage the user asked to keep.
- */
-export function nearestKeyframe(
-  xs: readonly number[],
-  t: number,
-): number | null {
-  const before = keyframeAtOrBefore(xs, t);
-  const after = keyframeAtOrAfter(xs, t);
-  if (before === null) return after;
-  if (after === null) return before;
-  return t - before <= after - t ? before : after;
-}
-
-/**
  * Merge two sorted keyframe lists, dropping duplicates.
  *
  * The scan streams in batches; because packets arrive in decode order a later

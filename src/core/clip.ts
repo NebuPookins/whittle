@@ -1,4 +1,5 @@
-import { keyframeAtOrBefore, nearestKeyframe } from "./keyframes";
+import { keyframeAtOrAfter, keyframeAtOrBefore } from "./keyframes";
+import type { ExportMode } from "./exportMode";
 import { clamp, sameTime } from "./num";
 import type { TimeWindow } from "./timeline";
 
@@ -72,47 +73,74 @@ export function redo(history: History): History {
 export const canUndo = (h: History): boolean => h.past.length > 0;
 export const canRedo = (h: History): boolean => h.future.length > 0;
 
-/** What ffmpeg will really produce, once the start is snapped to a keyframe. */
+/** What ffmpeg will really produce, once the start is snapped to a keyframe if need be. */
 export interface EffectiveCut {
   readonly start: number;
   readonly end: number;
-  /** Snapped start minus requested start. Negative means it starts earlier. */
+  /** Snapped start minus requested start; never positive, since snapping only moves earlier. */
   readonly drift: number;
   readonly snapped: boolean;
 }
 
+const exactCut = (clip: Clip): EffectiveCut => ({
+  start: clip.start,
+  end: clip.end,
+  drift: 0,
+  snapped: false,
+});
+
 /**
- * Resolve a clip to the range a stream copy can actually deliver.
+ * Roughly how many seconds of footage a frame-accurate export re-encodes: the
+ * stretch before the first keyframe in the clip, and the one after the last.
+ * Everything between those keyframes is copied untouched. A clip with no two
+ * keyframes inside it is re-encoded whole.
  *
- * With no keyframes known yet the clip passes through unchanged, so the UI can
- * say "still scanning" rather than promise a cut point it cannot honour.
+ * An estimate: it follows `smartcut::plan_cut`, including its half-frame slack
+ * (a keyframe within half a frame of an edge counts as on it), but the backend
+ * re-encodes the whole range when the copied part turns out to open with
+ * leading pictures (open-GOP sources), which only the exported file shows.
+ */
+export function reencodeSpan(
+  clip: Clip,
+  keyframes: readonly number[],
+  frameRate: number | null,
+): number {
+  const half = frameRate !== null && frameRate > 0 ? 0.5 / frameRate : 0;
+  const first = keyframeAtOrAfter(keyframes, clip.start - half);
+  const last = keyframeAtOrBefore(keyframes, clip.end + half);
+  if (
+    first === null ||
+    last === null ||
+    last - first < half ||
+    first >= clip.end - half
+  ) {
+    return clip.end - clip.start;
+  }
+  const head = first - clip.start;
+  const tail = clip.end - last;
+  return (head >= half ? head : 0) + (tail >= half ? tail : 0);
+}
+
+/**
+ * Resolve a clip to the range the export will really deliver.
+ *
+ * A frame-accurate export cuts exactly where the clip was marked. A stream copy
+ * can only start on a keyframe, so its start is snapped back to the last
+ * keyframe at or before the in-point — never forward, which would drop footage
+ * the user asked to keep. With no keyframes known yet, or none before the
+ * in-point, the clip passes through unchanged, so the UI can say "still
+ * scanning" rather than promise a cut point it cannot honour.
  */
 export function effectiveCut(
   clip: Clip,
   keyframes: readonly number[],
+  mode: ExportMode,
 ): EffectiveCut {
-  const exact: EffectiveCut = {
-    start: clip.start,
-    end: clip.end,
-    drift: 0,
-    snapped: false,
-  };
+  const exact = exactCut(clip);
+  if (mode === "frameAccurate") return exact;
 
-  const kf = nearestKeyframe(keyframes, clip.start);
-  if (kf === null || kf >= clip.end) {
-    // `nearestKeyframe` prefers the closer keyframe, which can sit past the
-    // end of a sub-GOP clip — snapping there would cut to nothing. Fall back to
-    // the last keyframe at or before the in-point, still a valid start.
-    const before = keyframeAtOrBefore(keyframes, clip.start);
-    if (before === null) return exact;
-    return {
-      start: before,
-      end: clip.end,
-      drift: before - clip.start,
-      snapped: !sameTime(before, clip.start),
-    };
-  }
-
+  const kf = keyframeAtOrBefore(keyframes, clip.start);
+  if (kf === null) return exact;
   return {
     start: kf,
     end: clip.end,

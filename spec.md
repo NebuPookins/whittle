@@ -16,7 +16,7 @@ Target platform: Linux desktop. Built with **Tauri** (Rust shell + system `ffmpe
 
 ## Non-goals
 
-- Frame-accurate cutting (cuts snap to the nearest keyframe; see "Cut precision" below).
+- Frame-accurate cutting *during the narrowing loop* (the default export snaps to the nearest keyframe; see "Cut precision" below). An opt-in frame-accurate smart cut on Save As was added later; see the README.
 - Multi-track editing, transitions, effects, audio mixing.
 - Cross-platform polish beyond "runs on Linux" (Windows/Mac not a target, though Tauri may make it possible later).
 
@@ -46,7 +46,7 @@ Undo: keep a stack of previous working-file paths (temp files from each commit) 
 
 - On file load, fetch the keyframe list via `ffprobe -select_streams v -show_entries frame=pts_time,key_frame -of csv` (or equivalent) and store it.
 - When the user picks a cut point, the UI should show the nearest keyframe as the actual commit point — either by snapping the marker visually, or showing "commit will cut at 00:01:22.800 (nearest keyframe)" near the button.
-- Do not attempt frame-accurate re-encoding. If the user later wants sub-keyframe precision, that's a possible v2 feature (re-encode just the boundary GOP and concat), explicitly out of scope for v1.
+- Do not attempt frame-accurate re-encoding in v1. (Sub-keyframe precision, re-encoding just the boundary GOPs and copying the rest, has since been added as an opt-in Save As toggle; see the README.)
 
 ## Timeline component
 

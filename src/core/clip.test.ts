@@ -11,6 +11,7 @@ import {
   NO_MARKS,
   pendingClip,
   redo,
+  reencodeSpan,
   undo,
   type Clip,
 } from "./clip";
@@ -110,8 +111,8 @@ describe("commit / undo / redo", () => {
 });
 
 describe("effectiveCut", () => {
-  it("snaps the start to the nearest keyframe and reports the drift", () => {
-    const cut = effectiveCut({ start: 3.3, end: 9 }, KF);
+  it("snaps the start back to the previous keyframe and reports the drift", () => {
+    const cut = effectiveCut({ start: 3.3, end: 9 }, KF, "keyframeCopy");
     expect(cut.start).toBe(3.2);
     expect(cut.end).toBe(9);
     expect(cut.snapped).toBe(true);
@@ -119,31 +120,49 @@ describe("effectiveCut", () => {
   });
 
   it("reports no snap when the start is already a keyframe", () => {
-    const cut = effectiveCut({ start: 3.2, end: 9 }, KF);
+    const cut = effectiveCut({ start: 3.2, end: 9 }, KF, "keyframeCopy");
     expect(cut.snapped).toBe(false);
     expect(cut.drift).toBe(0);
   });
 
   it("leaves the end alone — only the start must land on a keyframe", () => {
-    expect(effectiveCut({ start: 0, end: 7.77 }, KF).end).toBe(7.77);
+    expect(effectiveCut({ start: 0, end: 7.77 }, KF, "keyframeCopy").end).toBe(7.77);
   });
 
   it("passes the clip through while keyframes are still unknown", () => {
-    const cut = effectiveCut({ start: 3.3, end: 9 }, []);
+    const cut = effectiveCut({ start: 3.3, end: 9 }, [], "keyframeCopy");
     expect(cut.start).toBe(3.3);
     expect(cut.snapped).toBe(false);
   });
 
-  it("falls back to an earlier keyframe rather than snapping past the end", () => {
-    const cut = effectiveCut({ start: 11.15, end: 11.18 }, KF);
+  it("never snaps forward, even when the next keyframe is closer", () => {
+    const cut = effectiveCut({ start: 4.7, end: 9 }, KF, "keyframeCopy");
+    expect(cut.start).toBe(3.2);
+    expect(cut.drift).toBeCloseTo(-1.5);
+  });
+
+  it("always starts on the latest keyframe at or before the in-point", () => {
+    // Sweep in-points across every gap, including either side of each keyframe,
+    // so a regression to "nearest" snapping fails wherever the next keyframe is
+    // closer.
+    const inPoints = Array.from({ length: 1201 }, (_, i) => i * 0.01);
+    inPoints.forEach((inPoint) => {
+      const cut = effectiveCut({ start: inPoint, end: 12 }, KF, "keyframeCopy");
+      const expected = Math.max(...KF.filter((k) => k <= inPoint + 1e-9));
+      expect(cut.start, `in-point ${inPoint}`).toBeCloseTo(expected, 9);
+      expect(cut.start, `in-point ${inPoint}`).toBeLessThanOrEqual(inPoint + 1e-9);
+    });
+  });
+
+  it("keeps a sub-GOP clip non-empty by snapping back", () => {
+    const cut = effectiveCut({ start: 11.15, end: 11.18 }, KF, "keyframeCopy");
     expect(cut.start).toBe(9.6);
     expect(cut.start).toBeLessThan(cut.end);
     expect(cut.snapped).toBe(true);
-    expect(cut.drift).toBeCloseTo(-1.55);
   });
 
   it("stays unsnapped when no keyframe precedes the in-point", () => {
-    const cut = effectiveCut({ start: 1.0, end: 2.0 }, [5.0, 6.0]);
+    const cut = effectiveCut({ start: 1.0, end: 2.0 }, [5.0, 6.0], "keyframeCopy");
     expect(cut.start).toBe(1.0);
     expect(cut.snapped).toBe(false);
   });
@@ -182,5 +201,46 @@ describe("nearestWaypoint", () => {
   it("returns null at the edges when there is nowhere left to go", () => {
     expect(nearestWaypoint(CLIP, NO_MARKS, [15], 10, "back")).toBeNull();
     expect(nearestWaypoint(CLIP, NO_MARKS, [15], 20, "forward")).toBeNull();
+  });
+});
+
+describe("effectiveCut in frame-accurate mode", () => {
+  it("keeps the marked range without snapping", () => {
+    expect(effectiveCut({ start: 3.3, end: 9 }, KF, "frameAccurate")).toEqual({
+      start: 3.3,
+      end: 9,
+      drift: 0,
+      snapped: false,
+    });
+  });
+
+  it("needs no keyframes to know where it cuts", () => {
+    const cut = effectiveCut({ start: 3.3, end: 9 }, [], "frameAccurate");
+    expect(cut.start).toBe(3.3);
+    expect(cut.snapped).toBe(false);
+  });
+});
+
+describe("reencodeSpan", () => {
+  it("counts the stretch before the first keyframe and after the last", () => {
+    // Keyframes inside 3.3..9 run from 4.8 to 8.0: 1.5s before, 1.0s after.
+    expect(reencodeSpan({ start: 3.3, end: 9 }, KF, 30)).toBeCloseTo(2.5);
+  });
+
+  it("is zero when both ends sit on keyframes", () => {
+    expect(reencodeSpan({ start: 3.2, end: 8 }, KF, 30)).toBe(0);
+  });
+
+  it("counts an edge within half a frame of a keyframe as on it", () => {
+    expect(reencodeSpan({ start: 3.2 + 0.01, end: 8 - 0.01 }, KF, 30)).toBe(0);
+    // Without a frame rate there is no slack to apply.
+    expect(reencodeSpan({ start: 3.21, end: 7.99 }, KF, null)).toBeCloseTo(
+      4.8 - 3.21 + (7.99 - 6.4),
+    );
+  });
+
+  it("re-encodes the whole clip when it holds fewer than two keyframes", () => {
+    expect(reencodeSpan({ start: 3.3, end: 4.0 }, KF, 30)).toBeCloseTo(0.7);
+    expect(reencodeSpan({ start: 3.3, end: 3.4 }, [], 30)).toBeCloseTo(0.1);
   });
 });

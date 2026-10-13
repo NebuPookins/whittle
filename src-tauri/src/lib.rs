@@ -5,6 +5,7 @@ pub mod keyframes;
 pub mod preview;
 pub mod proc;
 pub mod probe;
+pub mod smartcut;
 pub mod trim;
 
 use std::sync::atomic::Ordering;
@@ -15,7 +16,7 @@ use tauri::{AppHandle, Manager, State};
 use error::AppError;
 use keyframes::ScanGeneration;
 use probe::VideoMetadata;
-use trim::ExportReport;
+use trim::{ExportMode, ExportReport};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,7 +69,7 @@ async fn probe_file(app: AppHandle, path: String) -> Result<OpenedFile, AppError
                 return Err(AppError::invalid(format!("No such file: {path}")));
             }
             let json = proc::run("ffprobe", &probe::metadata_args(&path))?;
-            probe::parse_metadata(&path, &json)
+            probe::parse_metadata_for_installed_ffmpeg(&path, &json)
         })
         .await
         .map_err(|e| AppError::Io(e.to_string()))??
@@ -129,10 +130,10 @@ async fn export_trim(
     input: String,
     start: f64,
     end: f64,
-    start_time: f64,
     dest: String,
+    mode: ExportMode,
 ) -> Result<ExportReport, AppError> {
-    blocking(move || trim::export(&input, start, end, start_time, &dest))
+    blocking(move || trim::export(&input, start, end, &dest, mode))
         .await
         .map_err(|e| AppError::Io(e.to_string()))?
 }

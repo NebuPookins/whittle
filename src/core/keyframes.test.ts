@@ -4,36 +4,10 @@ import {
   keyframeAtOrBefore,
   keyframesInRange,
   mergeSorted,
-  nearestKeyframe,
 } from "./keyframes";
 
 // The keyframe layout ffprobe reports for a 12s clip at GOP 48 / 30fps.
 const KF = [0, 1.6, 3.2, 4.8, 6.4, 8.0, 9.6, 11.2];
-
-describe("nearestKeyframe", () => {
-  it("returns an exact keyframe unchanged", () => {
-    expect(nearestKeyframe(KF, 3.2)).toBe(3.2);
-    expect(nearestKeyframe(KF, 0)).toBe(0);
-  });
-
-  it("snaps to whichever side is closer", () => {
-    expect(nearestKeyframe(KF, 3.3)).toBe(3.2);
-    expect(nearestKeyframe(KF, 4.7)).toBe(4.8);
-  });
-
-  it("breaks a tie toward the earlier keyframe, so footage is kept", () => {
-    expect(nearestKeyframe(KF, 2.4)).toBe(1.6);
-  });
-
-  it("clamps beyond either end of the list", () => {
-    expect(nearestKeyframe(KF, -10)).toBe(0);
-    expect(nearestKeyframe(KF, 999)).toBe(11.2);
-  });
-
-  it("reports nothing when the keyframe list is not known yet", () => {
-    expect(nearestKeyframe([], 5)).toBeNull();
-  });
-});
 
 describe("keyframeAtOrBefore / keyframeAtOrAfter", () => {
   it("include an exact hit", () => {
@@ -94,7 +68,7 @@ describe("mergeSorted", () => {
     const batches = [[0, 1.6], [3.2, 4.8], [6.4, 8.0], [9.6, 11.2]];
     const all = batches.reduce<readonly number[]>((acc, b) => mergeSorted(acc, b), []);
     expect(all).toEqual(KF);
-    expect(nearestKeyframe(all, 6.3)).toBe(6.4);
+    expect(keyframeAtOrAfter(all, 6.3)).toBe(6.4);
   });
 });
 
@@ -102,11 +76,11 @@ describe("lookup over a large list", () => {
   const many = Array.from({ length: 100_000 }, (_, i) => i * 0.5);
 
   it("stays exact at arbitrary offsets", () => {
-    expect(nearestKeyframe(many, 25_000.24)).toBe(25_000);
-    expect(nearestKeyframe(many, 25_000.26)).toBe(25_000.5);
+    expect(keyframeAtOrBefore(many, 25_000.26)).toBe(25_000);
+    expect(keyframeAtOrAfter(many, 25_000.24)).toBe(25_000.5);
   });
 
   it("does not blow the stack", () => {
-    expect(() => nearestKeyframe(many, 1)).not.toThrow();
+    expect(() => keyframeAtOrBefore(many, 1)).not.toThrow();
   });
 });

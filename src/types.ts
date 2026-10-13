@@ -1,3 +1,8 @@
+/** Mirrors `probe::FrameAccurateSupport`. */
+export type FrameAccurateSupport =
+  | { readonly status: "supported" }
+  | { readonly status: "unsupported"; readonly reason: string };
+
 /** Mirrors `OpenedFile` (a flattened `probe::VideoMetadata`). Times are 0-based seconds. */
 export interface VideoMetadata {
   readonly path: string;
@@ -15,6 +20,8 @@ export interface VideoMetadata {
   readonly sizeBytes: number;
   readonly frameRate: number | null;
   readonly hasBFrames: boolean;
+  /** Whether a frame-accurate export can handle this file, and if not, why. */
+  readonly frameAccurate: FrameAccurateSupport;
 }
 
 /** Mirrors `ToolStatus`. A `null` version means the tool is not on `$PATH`. */

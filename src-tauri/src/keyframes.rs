@@ -8,6 +8,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::error::AppError;
+use crate::probe::packet_args;
 use crate::proc::tail;
 
 pub const EVENT_BATCH: &str = "keyframes-batch";
@@ -45,35 +46,26 @@ pub struct KeyframeDone {
 /// what keeps this tractable on long files. (`frame=key_frame` would decode
 /// every frame and take minutes on a feature-length video.)
 pub fn keyframe_args(path: &str) -> Vec<String> {
-    [
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_packets",
-        "-show_entries",
-        "packet=pts_time,flags",
-        "-of",
-        "csv=print_section=0",
-        path,
-    ]
-    .iter()
-    .map(|s| (*s).to_string())
-    .collect()
+    packet_args(path, "v:0", None, "pts_time,flags")
+}
+
+/// Whether a packet's `flags` field marks a keyframe. The field is always a
+/// short `K`/`D`/`_` triple, so anything longer is a side-data row instead.
+pub fn is_keyframe_flags(flags: &str) -> bool {
+    flags.len() <= 4 && flags.contains('K')
 }
 
 /// Parse one CSV row, yielding the timestamp only for keyframe packets.
 ///
 /// Rows look like `3.200000,K__`. Packets with an unknown pts (`N/A`) are
 /// skipped, as are side-data rows such as `-0.023000,Skip Samples,1024,0,0,0`
-/// which ffprobe can interleave — the flags field is always a short
-/// `K`/`D`/`_` triple, so anything longer is not a packet row.
+/// which ffprobe can interleave.
 pub fn parse_packet_line(line: &str) -> Option<f64> {
     let mut fields = line.trim().split(',');
     let pts = fields.next()?.trim();
     let flags = fields.next()?.trim();
 
-    if flags.len() > 4 || !flags.contains('K') {
+    if !is_keyframe_flags(flags) {
         return None;
     }
     let t = pts.parse::<f64>().ok()?;

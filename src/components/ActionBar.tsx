@@ -1,5 +1,7 @@
 import type { Clip, EffectiveCut, Marks } from "../core/clip";
+import type { ExportMode } from "../core/exportMode";
 import { formatSpan, formatTimecode } from "../core/timecode";
+import type { FrameAccurateSupport } from "../types";
 
 export interface ActionHandlers {
   readonly markIn: () => void;
@@ -28,6 +30,12 @@ interface Props {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly exporting: boolean;
+  /** The mode Save As will really use — the toggle, unless the file overrides it. */
+  readonly mode: ExportMode;
+  readonly frameAccurate: FrameAccurateSupport;
+  readonly onFrameAccurateChange: (next: boolean) => void;
+  /** Estimated seconds a frame-accurate export re-encodes; null until keyframes are known. */
+  readonly reencode: number | null;
   readonly actions: ActionHandlers;
 }
 
@@ -39,15 +47,33 @@ interface Props {
  */
 function CutNote({
   cut,
+  mode,
+  reencode,
   scanning,
   keyframesKnown,
   scanError,
 }: {
   cut: EffectiveCut;
+  mode: ExportMode;
+  reencode: number | null;
   scanning: boolean;
   keyframesKnown: boolean;
   scanError: string | null;
 }) {
+  if (mode === "frameAccurate") {
+    // No snapping to explain: the clip starts on the frame that was marked. All
+    // that is left to say is how much of it has to be re-encoded to get there.
+    return (
+      <span className="note">
+        Export cuts at <code>{formatTimecode(cut.start)}</code> — frame-accurate
+        {reencode === null
+          ? ""
+          : reencode > 0
+            ? ` (re-encodes ~${formatSpan(reencode)})`
+            : " (on keyframes — nothing re-encoded)"}
+      </span>
+    );
+  }
   if (scanning) {
     return (
       <span className="note status__spin">
@@ -79,11 +105,10 @@ function CutNote({
       </span>
     );
   }
-  const earlier = cut.drift < 0;
   return (
     <span className="note note--warn">
-      Export cuts at <code>{formatTimecode(cut.start)}</code> — nearest
-      keyframe, {formatSpan(Math.abs(cut.drift))} {earlier ? "earlier" : "later"}
+      Export cuts at <code>{formatTimecode(cut.start)}</code> — previous
+      keyframe, {formatSpan(Math.abs(cut.drift))} earlier
     </span>
   );
 }
@@ -100,6 +125,10 @@ export function ActionBar({
   canUndo,
   canRedo,
   exporting,
+  mode,
+  frameAccurate,
+  onFrameAccurateChange,
+  reencode,
   actions,
 }: Props) {
   const hasMarks = marks.inPoint !== null || marks.outPoint !== null;
@@ -190,11 +219,29 @@ export function ActionBar({
       <div className="actions">
         <CutNote
           cut={cut}
+          mode={mode}
+          reencode={reencode}
           scanning={scanning}
           keyframesKnown={keyframesKnown}
           scanError={scanError}
         />
         <div className="actions__spacer" />
+        <label
+          className="toggle"
+          title={
+            frameAccurate.status === "supported"
+              ? "Start on the exact frame instead of the previous keyframe. Re-encodes the few seconds before the first keyframe (and after the last); the rest is copied untouched."
+              : `${frameAccurate.reason} Saves cut on keyframes.`
+          }
+        >
+          <input
+            type="checkbox"
+            checked={mode === "frameAccurate"}
+            disabled={frameAccurate.status === "unsupported" || exporting}
+            onChange={(e) => onFrameAccurateChange(e.currentTarget.checked)}
+          />
+          Frame-accurate
+        </label>
         <button
           className="primary"
           onClick={actions.exportClip}

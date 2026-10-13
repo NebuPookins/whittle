@@ -14,12 +14,15 @@ import {
   hasPendingChange,
   nearestWaypoint,
   pendingClip,
+  reencodeSpan,
   type WaypointDirection,
 } from "./core/clip";
 import { editorReducer, initEditor } from "./core/editor";
+import { exportModeFor } from "./core/exportMode";
 import { basename, splitExtension, suggestExportPath } from "./core/paths";
 import { formatBytes, formatSpan } from "./core/timecode";
 import { useKeyframeScan } from "./hooks/useKeyframeScan";
+import { usePersistedFlag } from "./hooks/usePersistedFlag";
 import { useVideoPlayback } from "./hooks/useVideoPlayback";
 import {
   checkTools,
@@ -58,6 +61,10 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false);
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
   const [editor, dispatch] = useReducer(editorReducer, initEditor(0));
+  const [wantsFrameAccurate, setWantsFrameAccurate] = usePersistedFlag(
+    "whittle.frameAccurate",
+    false,
+  );
 
   const scan = useKeyframeScan(meta);
 
@@ -65,10 +72,27 @@ export default function App() {
   const pending = useMemo(() => pendingClip(clip, editor.marks), [clip, editor.marks]);
   // Save As writes what is highlighted, so the cut note describes that range.
   // A failed scan leaves a partial keyframe list; snap against it and the
-  // reported "nearest keyframe" would be wrong, so treat it as unknown instead.
+  // reported cut point would be wrong, so treat it as unknown instead.
+  const keyframes = useMemo(
+    () => (scan.error === null ? scan.keyframes : []),
+    [scan.keyframes, scan.error],
+  );
+  // The toggle is a wish; the backend decides whether it can be granted.
+  const mode =
+    meta === null
+      ? "keyframeCopy"
+      : exportModeFor(wantsFrameAccurate, meta.frameAccurate);
   const cut = useMemo(
-    () => effectiveCut(pending, scan.error === null ? scan.keyframes : []),
-    [pending, scan.keyframes, scan.error],
+    () => effectiveCut(pending, keyframes, mode),
+    [pending, keyframes, mode],
+  );
+  const frameRate = meta?.frameRate ?? null;
+  const reencode = useMemo(
+    () =>
+      mode === "frameAccurate" && !scan.scanning && keyframes.length > 0
+        ? reencodeSpan(pending, keyframes, frameRate)
+        : null,
+    [mode, pending, keyframes, scan.scanning, frameRate],
   );
   const src = useMemo(
     () => (meta === null ? null : previewUrl(meta.previewBaseUrl, meta.previewToken)),
@@ -214,7 +238,13 @@ export default function App() {
       if (dest === null) return;
 
       setExporting(true);
-      const report = await exportTrim(meta.path, cut.start, cut.end, meta.startTime, dest);
+      const report = await exportTrim(
+        meta.path,
+        cut.start,
+        cut.end,
+        dest,
+        mode,
+      );
       const drift = report.actualDuration - report.requestedDuration;
       const tolerance = Math.max(
         DRIFT_FLOOR,
@@ -235,7 +265,7 @@ export default function App() {
     } finally {
       setExporting(false);
     }
-  }, [meta, exporting, cut, notify]);
+  }, [meta, exporting, cut, mode, notify]);
 
   /* ---------- keyboard ---------- */
 
@@ -430,6 +460,10 @@ export default function App() {
             canUndo={canUndo(editor.history)}
             canRedo={canRedo(editor.history)}
             exporting={exporting}
+            mode={mode}
+            frameAccurate={meta.frameAccurate}
+            onFrameAccurateChange={setWantsFrameAccurate}
+            reencode={reencode}
             actions={actions}
           />
           <StatusBar meta={meta} scan={scan} />

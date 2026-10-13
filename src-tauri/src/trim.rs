@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
-use crate::proc::run;
+use crate::proc::{ffmpeg_base, format_ts, run, strings};
 use crate::probe::{metadata_args, parse_metadata};
 
 #[derive(Debug, Clone, Serialize)]
@@ -15,10 +15,15 @@ pub struct ExportReport {
     pub size_bytes: u64,
 }
 
-/// ffmpeg wants a plain decimal; `{:.6}` avoids scientific notation for the
-/// very small values that show up after deep zooming.
-pub fn format_ts(t: f64) -> String {
-    format!("{:.6}", t)
+/// How the in-point is honoured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ExportMode {
+    /// Pure stream copy; the caller has snapped the in-point to a keyframe.
+    KeyframeCopy,
+    /// Start on exactly the requested frame by re-encoding the partial GOPs at
+    /// each end; see `smartcut`.
+    FrameAccurate,
 }
 
 /// Build the lossless trim invocation.
@@ -39,30 +44,20 @@ pub fn format_ts(t: f64) -> String {
 /// length.
 ///
 /// `start` and `end` are 0-based (the container's `start_time` has already
-/// been subtracted, so they line up with the keyframes and the UI), but input
-/// `-ss`/`-to` address the raw container timeline — so `start_time` is added
-/// back before they reach ffmpeg. A TS file whose first packet sits at PTS
-/// 1440.5 has to seek to 1445.5 for a 0-based cut at 5.0s, not 5.0.
-pub fn trim_args(input: &str, start: f64, end: f64, start_time: f64, output: &str) -> Vec<String> {
-    vec![
-        "-hide_banner".into(),
-        "-nostdin".into(),
-        "-y".into(),
-        "-seek2any".into(),
-        "1".into(),
-        "-ss".into(),
-        format_ts(start + start_time),
-        "-to".into(),
-        format_ts(end + start_time),
-        "-i".into(),
-        input.into(),
+/// been subtracted, so they line up with the keyframes and the UI), and that is
+/// exactly what input `-ss`/`-to` want: ffmpeg measures both from the
+/// container's `start_time` itself. Adding it back, as this function once did,
+/// seeks `start_time` seconds past the end of a transport stream whose first
+/// packet sits at PTS 1440.5 and writes an empty file (measured on ffmpeg
+/// 9.0.2). Only ffprobe's `-read_intervals` takes raw timestamps.
+pub fn trim_args(input: &str, start: f64, end: f64, output: &str) -> Vec<String> {
+    [
+        ffmpeg_base(),
+        strings(["-seek2any", "1", "-ss", &format_ts(start), "-to", &format_ts(end), "-i", input]),
         // Carry every stream through (extra audio tracks, subtitles, chapters).
-        "-map".into(),
-        "0".into(),
-        "-c".into(),
-        "copy".into(),
-        output.into(),
+        strings(["-map", "0", "-c", "copy", output]),
     ]
+    .concat()
 }
 
 pub fn validate_range(start: f64, end: f64) -> Result<(), AppError> {
@@ -108,13 +103,17 @@ pub fn export(
     input: &str,
     start: f64,
     end: f64,
-    start_time: f64,
     dest: &str,
+    mode: ExportMode,
 ) -> Result<ExportReport, AppError> {
     validate_range(start, end)?;
     ensure_distinct(input, dest)?;
 
-    run("ffmpeg", &trim_args(input, start, end, start_time, dest))?;
+    // What was actually cut: the request, unless a smart cut snapped it to frames.
+    let cut = match mode {
+        ExportMode::KeyframeCopy => run("ffmpeg", &trim_args(input, start, end, dest)).map(|_| start..end)?,
+        ExportMode::FrameAccurate => crate::smartcut::export(input, start, end, dest)?,
+    };
 
     // Verify rather than assume, so the UI can show real keyframe drift instead
     // of the requested figure. The file is already written by this point, so a
@@ -135,14 +134,14 @@ pub fn export(
     let (actual_duration, size_bytes) = match probed {
         Some(meta) => (meta.duration, meta.size_bytes),
         None => (
-            end - start,
+            cut.end - cut.start,
             std::fs::metadata(Path::new(dest)).map(|m| m.len()).unwrap_or(0),
         ),
     };
 
     Ok(ExportReport {
         dest_path: dest.to_string(),
-        requested_duration: end - start,
+        requested_duration: cut.end - cut.start,
         actual_duration,
         size_bytes,
     })
@@ -153,7 +152,7 @@ mod tests {
     use super::*;
 
     fn args() -> Vec<String> {
-        trim_args("/v/in.mkv", 3.2, 6.4, 0.0, "/v/out.mkv")
+        trim_args("/v/in.mkv", 3.2, 6.4, "/v/out.mkv")
     }
 
     fn index_of(args: &[String], needle: &str) -> usize {
@@ -168,16 +167,6 @@ mod tests {
         assert!(index_of(&a, "-to") < index_of(&a, "-i"));
         assert_eq!(a[index_of(&a, "-ss") + 1], "3.200000");
         assert_eq!(a[index_of(&a, "-to") + 1], "6.400000");
-    }
-
-    #[test]
-    fn rebases_cut_points_onto_the_container_timeline() {
-        // A TS file's raw timestamps are offset from zero; the UI works in
-        // 0-based seconds, so the container start_time has to be added back or
-        // -ss/-to would seek before the first packet.
-        let a = trim_args("/v/in.ts", 5.0, 10.0, 1440.5, "/v/out.ts");
-        assert_eq!(a[index_of(&a, "-ss") + 1], "1445.500000");
-        assert_eq!(a[index_of(&a, "-to") + 1], "1450.500000");
     }
 
     #[test]
@@ -199,20 +188,6 @@ mod tests {
         let a = args();
         assert_eq!(a[index_of(&a, "-i") + 1], "/v/in.mkv");
         assert_eq!(a.last().unwrap(), "/v/out.mkv");
-    }
-
-    #[test]
-    fn timestamps_are_plain_fixed_point() {
-        // ffmpeg cannot read scientific notation, which is what Rust's default
-        // float formatting would reach for at the extremes of a zoomed timeline.
-        assert_eq!(format_ts(0.5), "0.500000");
-        assert_eq!(format_ts(3661.5), "3661.500000");
-        assert_eq!(format_ts(0.0), "0.000000");
-        for t in [1e-9, 1e-7, 1.0 / 3.0, 86_400.0, 1e7] {
-            let s = format_ts(t);
-            assert!(!s.contains('e'), "{t} formatted as {s}");
-            assert_eq!(s.split('.').nth(1).map(str::len), Some(6), "{s}");
-        }
     }
 
     #[test]

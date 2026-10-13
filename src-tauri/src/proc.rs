@@ -39,6 +39,24 @@ fn check(tool: &'static str, output: &Output) -> Result<(), AppError> {
     })
 }
 
+/// ffmpeg wants a plain decimal; `{:.6}` avoids scientific notation for the
+/// very small values that show up after deep zooming.
+pub fn format_ts(t: f64) -> String {
+    format!("{:.6}", t)
+}
+
+/// An argv from literals and computed values alike: `&String` coerces to `&str`
+/// at the call site, so `strings(["-ss", &format_ts(t)])` needs no `.into()`.
+pub fn strings<const N: usize>(parts: [&str; N]) -> Vec<String> {
+    parts.map(String::from).to_vec()
+}
+
+/// The options every ffmpeg invocation here starts with: no banner, no stdin
+/// prompts, overwrite the output.
+pub fn ffmpeg_base() -> Vec<String> {
+    strings(["-hide_banner", "-nostdin", "-y"])
+}
+
 /// Keep the last `max` characters — ffmpeg's useful diagnostics are at the end.
 pub fn tail(s: &str, max: usize) -> String {
     let trimmed = s.trim();
@@ -84,6 +102,20 @@ mod tests {
     fn version_absent_is_none() {
         assert_eq!(parse_version("something unexpected"), None);
         assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn timestamps_are_plain_fixed_point() {
+        // ffmpeg cannot read scientific notation, which is what Rust's default
+        // float formatting would reach for at the extremes of a zoomed timeline.
+        assert_eq!(format_ts(0.5), "0.500000");
+        assert_eq!(format_ts(3661.5), "3661.500000");
+        assert_eq!(format_ts(0.0), "0.000000");
+        for t in [1e-9, 1e-7, 1.0 / 3.0, 86_400.0, 1e7] {
+            let s = format_ts(t);
+            assert!(!s.contains('e'), "{t} formatted as {s}");
+            assert_eq!(s.split('.').nth(1).map(str::len), Some(6), "{s}");
+        }
     }
 
     #[test]

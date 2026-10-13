@@ -46,13 +46,99 @@ ffmpeg. A single `ffmpeg` stream copy runs when you **Save As**.
 
 ### Cut precision
 
-Stream copies can only *start* on a keyframe, so the in-point is snapped to the
-nearest one. Whittle shows exactly where the cut will land before you commit to
-it ("Export cuts at 00:01:22.800 — nearest keyframe, 0.14s earlier"), and draws
-it on the timeline as a dashed line. Ties snap to the *earlier* keyframe, since
-starting early keeps footage and starting late loses it.
+By default a stream copy is used, and those can only *start* on a keyframe, so
+the in-point is snapped back to the last keyframe at or before it — never
+forward, since starting late would lose footage you marked to keep. Whittle
+shows exactly where the cut will land before you commit to it ("Export cuts at
+00:01:22.800 — previous keyframe, 0.14s earlier"), and draws it on the timeline
+as a dashed line.
 
-Sub-keyframe precision would require re-encoding the boundary GOP. Out of scope.
+### Frame-accurate export
+
+Tick **Frame-accurate** next to Save As to start on exactly the frame you
+marked instead. The cut note then reads "Export cuts at 00:01:22.940 —
+frame-accurate (re-encodes ~1.1s)", and the dashed line goes away, since there is
+nothing left to snap. It is a smart cut: only the stretch before the first
+keyframe in the range (the *head*) and after the last (the *tail*) are
+re-encoded, with the source's own codec family, profile, pixel format, colour
+tags, frame rate and aspect ratio at CRF 18; everything between is still a
+stream copy. Audio, subtitles and extra tracks are copied for exactly the
+selected range.
+
+It supports H.264 and HEVC only, progressive and unrotated, and only when the
+installed ffmpeg has the matching encoder (libx264 / libx265, with the source's
+pixel format among its supported ones; checked once per run with
+`ffmpeg -encoders` and `-h encoder=…`). If that query itself fails, the file is
+treated as supported and the export reports ffmpeg's own error. For anything
+else the toggle is disabled, with the backend's reason as its tooltip, and the
+backend refuses it too. The estimate in the cut note is just that: a source
+with open GOPs (see below) is re-encoded whole.
+
+The pipeline, one ffmpeg per step, all intermediates MPEG-TS in a hidden directory beside the destination
+that is removed on success and failure alike (a crash or kill cannot clean up
+after itself, so the next frame-accurate export into the same folder removes
+any `.whittle-cut-<pid>-…` directory whose process is gone):
+
+```
+head   decode [S, K1), re-encode            -> head.ts
+body   -seek2any 1 -ss K1 -to <bound> -c copy -bsf:v *_mp4toannexb -> body.ts
+tail   decode [K2, E), re-encode            -> tail.ts
+join   concat demuxer over head, body, tail  (video)
+       + the source's other streams, -ss S -to E -c copy
+       -> the destination, container chosen by its extension
+```
+
+What was measured, and is why it is built this way (see the doc comments in
+`src-tauri/src/smartcut.rs` and the tests in `tests/ffmpeg_roundtrip.rs`):
+
+- **A stream copy's out-point is not exact.** With B-frames, copying to 7.0s
+  from a keyframe at 3.2s gave 116 frames where 114 fit, in mp4 and mkv; ending
+  on a keyframe still gave two extra. Input `-to` compares decode timestamps,
+  which trail display order by the reorder delay. So the body is stopped just
+  short of its closing keyframe's dts and the last partial GOP is re-encoded.
+  (This also means the plain keyframe-copy export runs a couple of frames long
+  at the end on B-frame sources; that is left as it was.)
+- **Parameter sets must travel in-band.** The head's SPS/PPS differ from the
+  source's whenever the source was encoded with other settings, and an mp4 or
+  mkv muxer writes one decoder configuration from the first packets. Joining as
+  MPEG-TS with Annex-B bitstreams keeps each piece's own parameter sets at its
+  keyframes, and the final mux keeps them in the samples.
+- **Open GOPs cannot be spliced.** x265 defaults to them. Leading pictures at a
+  copied keyframe reference footage that is not there (`Could not find ref with
+  POC`), so when the copied body opens with them the whole range is re-encoded.
+  Leading pictures at the *end* keyframe are not in the body at all, so the tail
+  starts after the body's last measured frame, and is encoded whenever that
+  leaves a gap before the out-point, even when the out-point sits exactly on
+  that keyframe (otherwise those pictures were lost: 191 frames where 192 fit).
+- **Frames are chosen by raw timestamp, midway between frames.** Every
+  alternative misbehaved: on a transport stream (no index) ffmpeg's input
+  `-ss` seeks to the keyframe *nearest* the target, not the one before it, and
+  its timeline can be off from the container's `start_time` by up to 0.7 of a
+  frame; output-side `-ss` gave different frame counts for `0.001` and
+  `-0.001`; `-fps_mode cfr` duplicated the first frame when the offset hit half
+  a frame; and Matroska's millisecond timestamps (33, 33, 34ms) made x264 emit
+  duplicate timestamps. So the re-encodes use `-copyts` and a `trim` filter on
+  the raw timestamps, then `setpts` renumbers onto an exact grid.
+- **Keyframe lookups need a wide window on index-less containers.** ffprobe's
+  `-read_intervals` is meant to open on the keyframe before the interval, but
+  an MPEG-TS has no index and the seek is a byte estimate. Measured on a
+  15 minute 160x120 TS (`-g 50`, `-output_ts_offset 1440.5`): a one-second
+  window ending at the cut opened on a plain packet *after* the time asked for
+  and showed no keyframe in 7 of 14 probes (the old code then silently decoded
+  from 0.0, the wrong grid phase); windows starting at the time asked for
+  always found the right first keyframe in the probes made. So the search
+  widens (1s, 4s, 16s… back to the start of the file) until it finds a keyframe
+  (last-keyframe lookups) or until the first packet read is decoded no later
+  than the time asked for (first-keyframe lookups), and fails loudly rather
+  than falling back to 0.0.
+- **Audio needs `-copypriorss 0`.** Otherwise a transport stream's audio began
+  0.27s early, and an mp4's 85ms early.
+- mkv output starts its video ~0.06s in (the B-frame reorder delay, as for any
+  mkv), and an MPEG-TS output starts about a second in; both are muxer
+  conventions, not offsets in the cut.
+
+Constant frame rate is assumed over the cut: times are snapped to the nearest
+frame, so a variable-rate source is cut to within half a frame.
 
 ## Keyboard
 
@@ -80,6 +166,9 @@ The trim command is:
 ffmpeg -seek2any 1 -ss <keyframe> -to <end> -i <in> -map 0 -c copy <out>
 ```
 
+(That is the keyframe-copy export; the frame-accurate one reuses the same
+`-seek2any`/input-side `-ss`/`-to` for its copied middle.)
+
 Two of those choices are load-bearing and were established by measurement, not
 assumption:
 
@@ -91,6 +180,11 @@ assumption:
   3.2s–6.4s yielded 4.9s starting at 1.6s, with no discard flag to hide it. mp4
   and B-frame-free mkv are unaffected. This is safe only because the in-point is
   snapped to a real keyframe first.
+
+`-ss`/`-to` are 0-based, measured from the container's `start_time`, which ffmpeg
+adds itself. An earlier version added it back by hand, which on a transport
+stream with `start_time` 1441.9s sought 1441.9s past the end and wrote an empty
+file; it is no longer added.
 
 `-avoid_negative_ts make_zero`, a common addition here, was measured to make
 things *worse* (it shifts video by the audio priming offset) and is deliberately
@@ -155,11 +249,15 @@ src-tauri/src/   ffmpeg/ffprobe wrappers. Argument building and output parsing
 ## Tests
 
 ```bash
-pnpm test                      # 119 frontend tests
-cd src-tauri && cargo test     # 43 unit + 5 integration
+pnpm test                      # 144 frontend tests
+cd src-tauri && cargo test     # 65 unit + 15 integration
 ```
 
 The integration tests encode fixtures and run real trims through ffmpeg,
-verifying the extracted range in mp4, mkv and mov. They skip themselves if
+verifying the extracted range in mp4, mkv and mov, and that frame-accurate cuts
+(H.264 and HEVC, open and closed GOP, mp4, mkv and a transport stream with a
+non-zero start, multiple audio tracks) hold exactly the requested frames,
+compared pixel for pixel against the source, with audio in step and no decode
+errors. They skip themselves if
 ffmpeg is absent. Removing `-seek2any` from `trim_args` makes them fail — the
 regression they exist to catch is real.

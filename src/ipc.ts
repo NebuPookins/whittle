@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
+import type { ExportMode } from "./core/exportMode";
 import type {
   AppErrorPayload,
   ExportReport,
@@ -35,10 +36,10 @@ export const exportTrim = (
   input: string,
   start: number,
   end: number,
-  startTime: number,
   dest: string,
+  mode: ExportMode,
 ): Promise<ExportReport> =>
-  invoke("export_trim", { input, start, end, startTime, dest });
+  invoke("export_trim", { input, start, end, dest, mode });
 
 /**
  * A URL the `<video>` element can stream, served by the loopback server in
