@@ -1,11 +1,9 @@
 import type { Clip, WaypointDirection } from "../core/clip";
 import { describeFailure } from "../core/media";
+import { adjacentPlaybackRate, PLAYBACK_RATES } from "../core/playbackRate";
 import { formatSpan, formatTimecode } from "../core/timecode";
 import type { VideoPlayback } from "../hooks/useVideoPlayback";
 import type { VideoMetadata } from "../types";
-
-/** Selectable playback speeds, slowest first. */
-const SPEEDS = [0.25, 0.5, 1, 1.25, 1.5, 2, 3, 4] as const;
 
 interface Props {
   readonly src: string;
@@ -27,6 +25,8 @@ export function VideoStage({
   const hasAudio = meta.audioCodec !== null;
   const muted = playback.muted;
   const muteLabel = muted ? "Unmute" : "Mute";
+  const slowerRate = adjacentPlaybackRate(playback.rate, "slower");
+  const fasterRate = adjacentPlaybackRate(playback.rate, "faster");
 
   return (
     <>
@@ -128,18 +128,41 @@ export function VideoStage({
         </div>
 
         <div className="transport__speed">
+          <button
+            className="icon"
+            onClick={() => slowerRate !== null && playback.setRate(slowerRate)}
+            disabled={slowerRate === null}
+            title="Decrease playback speed"
+            aria-label="Decrease playback speed"
+          >
+            −
+          </button>
           <select
             value={String(playback.rate)}
-            onChange={(e) => playback.setRate(Number(e.target.value))}
+            onChange={(e) => {
+              const selected = PLAYBACK_RATES.find(
+                (rate) => String(rate) === e.target.value,
+              );
+              if (selected !== undefined) playback.setRate(selected);
+            }}
             aria-label="Playback speed"
             title="Playback speed"
           >
-            {SPEEDS.map((speed) => (
+            {PLAYBACK_RATES.map((speed) => (
               <option key={speed} value={String(speed)}>
                 {speed}×
               </option>
             ))}
           </select>
+          <button
+            className="icon"
+            onClick={() => fasterRate !== null && playback.setRate(fasterRate)}
+            disabled={fasterRate === null}
+            title="Increase playback speed"
+            aria-label="Increase playback speed"
+          >
+            +
+          </button>
         </div>
       </div>
     </>

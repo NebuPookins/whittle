@@ -364,6 +364,12 @@ button.icon {
   transition: background 0.12s, border-color 0.12s;
 }
 
+.transport__speed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .transport__speed select:hover:not(:disabled) {
   background: #26303d;
   border-color: #3a475a;

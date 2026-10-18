@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Clip } from "../core/clip";
 import { errInfo, failureFromCode, failureFromPlayRejection, type MediaFailure } from "../core/media";
+import type { PlaybackRate } from "../core/playbackRate";
 import { logUi } from "../ipc";
 
 /**
@@ -52,8 +53,8 @@ export interface VideoPlayback {
   readonly setVolume: (v: number) => void;
   readonly toggleMute: () => void;
   /** Playback multiplier; 1 is real time. */
-  readonly rate: number;
-  readonly setRate: (r: number) => void;
+  readonly rate: PlaybackRate;
+  readonly setRate: (r: PlaybackRate) => void;
 }
 
 /**
@@ -80,7 +81,7 @@ export function useVideoPlayback(
   const [failure, setFailure] = useState<MediaFailure | null>(null);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
-  const [rate, setRate] = useState(1);
+  const [rate, setRate] = useState<PlaybackRate>(1);
 
   // Latest values for the rAF loop and callbacks, without re-subscribing.
   const clipRef = useRef(clip);
@@ -273,6 +274,7 @@ export function useVideoPlayback(
   };
 
   const toggleMute = () => setMuted((m) => !m);
+  const changeRate = (next: PlaybackRate) => setRate(next);
 
   return {
     attach: setElement,
@@ -285,6 +287,6 @@ export function useVideoPlayback(
     setVolume: changeVolume,
     toggleMute,
     rate,
-    setRate,
+    setRate: changeRate,
   };
 }
