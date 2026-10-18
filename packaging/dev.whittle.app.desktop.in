@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Whittle
+GenericName=Video Trimmer
+Comment=Narrow a video down to a target timespan by iterative, lossless trimming
+Exec=@ROOT@/scripts/launch.sh
+Path=@ROOT@
+Icon=dev.whittle.app
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=video;trim;cut;ffmpeg;
+StartupNotify=true
+StartupWMClass=Whittle
