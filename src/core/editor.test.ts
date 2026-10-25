@@ -27,8 +27,12 @@ describe("initEditor", () => {
     const s = fresh();
     expect(s.history.clip).toEqual({ start: 0, end: 100 });
     expect(s.view).toEqual({ start: 0, end: 100 });
-    expect(s.playhead).toBe(0);
     expect(s.marks).toEqual({ inPoint: null, outPoint: null });
+  });
+
+  it("puts the playhead in the middle, ready for the first probe", () => {
+    expect(fresh().playhead).toBe(50);
+    expect(run(fresh(), { type: "seek", time: 10 }, { type: "load", duration: 30 }).playhead).toBe(15);
   });
 });
 
@@ -270,5 +274,55 @@ describe("load", () => {
     expect(s.history.past).toHaveLength(0);
     expect(s.marks).toEqual({ inPoint: null, outPoint: null });
     expectConsistent(s);
+  });
+});
+
+describe("probe", () => {
+  it("bisects the longer end stretch of the pending selection", () => {
+    // 10-minute file, discard before 1m, discard after 9m, keep at 7m: the 6m
+    // stretch before the pin beats the 2m one after it.
+    const s = run(
+      initEditor(600),
+      { type: "markIn", time: 60 },
+      { type: "markOut", time: 540 },
+      { type: "markKeep", time: 420 },
+      { type: "probe" },
+    );
+    expect(s.playhead).toBe(240);
+    expectConsistent(s);
+  });
+
+  it("bisects the back stretch once it becomes the longer end", () => {
+    const s = run(
+      fresh(),
+      { type: "markKeep", time: 40 },
+      { type: "markIn", time: 20 },
+      { type: "probe" },
+    );
+    expect(s.playhead).toBe(70);
+  });
+
+  it("follows the committed clip once the marks are gone", () => {
+    const s = run(
+      fresh(),
+      { type: "markIn", time: 20 },
+      { type: "markOut", time: 60 },
+      { type: "commit" },
+      { type: "probe" },
+    );
+    expect(s.playhead).toBe(40);
+  });
+
+  it("leaves the marks, pins and view alone", () => {
+    const before = run(
+      fresh(),
+      { type: "markIn", time: 20 },
+      { type: "markKeep", time: 40 },
+      { type: "zoom", factor: 0.5, focus: 30 },
+    );
+    const after = run(before, { type: "probe" });
+    expect(after.marks).toEqual(before.marks);
+    expect(after.keeps).toEqual(before.keeps);
+    expect(after.view).toEqual(before.view);
   });
 });

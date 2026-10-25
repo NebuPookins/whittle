@@ -150,7 +150,7 @@ export function ActionBar({
         </button>
         <button
           onClick={actions.markKeep}
-          title="Pin the playhead as a moment worth keeping — press again to unpin (K)"
+          title="Pin the playhead as a moment worth keeping — to unpin, jump to the pin with the waypoint buttons and press again (K)"
         >
           Mark keep
         </button>

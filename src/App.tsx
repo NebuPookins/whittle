@@ -19,6 +19,7 @@ import {
 } from "./core/clip";
 import { editorReducer, initEditor } from "./core/editor";
 import { exportModeFor } from "./core/exportMode";
+import { sameTime } from "./core/num";
 import { basename, splitExtension, suggestExportPath } from "./core/paths";
 import { formatBytes, formatSpan } from "./core/timecode";
 import { useKeyframeScan } from "./hooks/useKeyframeScan";
@@ -269,11 +270,27 @@ export default function App() {
 
   /* ---------- keyboard ---------- */
 
-  const actions: ActionHandlers = useMemo(
-    () => ({
-      markIn: () => dispatch({ type: "markIn", time: editor.playhead }),
-      markOut: () => dispatch({ type: "markOut", time: editor.playhead }),
-      markKeep: () => dispatch({ type: "markKeep", time: editor.playhead }),
+  const actions: ActionHandlers = useMemo(() => {
+    // Each mark sets up the next step of the binary search — except while
+    // playing, where reframing or jumping would pull the view and the video
+    // out from under the user.
+    const paused = !playback.playing;
+    const discard = (type: "markIn" | "markOut") => {
+      dispatch({ type, time: editor.playhead });
+      if (paused) {
+        dispatch({ type: "zoomToSelection" });
+        dispatch({ type: "probe" });
+      }
+    };
+    return {
+      markIn: () => discard("markIn"),
+      markOut: () => discard("markOut"),
+      markKeep: () => {
+        // Unpinning only tidies up; it isn't a step of the search, so stay put.
+        const unpinning = editor.keeps.some((k) => sameTime(k, editor.playhead));
+        dispatch({ type: "markKeep", time: editor.playhead });
+        if (paused && !unpinning) dispatch({ type: "probe" });
+      },
       commit: () => dispatch({ type: "commit" }),
       clearMarks: () => dispatch({ type: "clearMarks" }),
       undo: () => dispatch({ type: "undo" }),
@@ -283,9 +300,8 @@ export default function App() {
       fit: () => dispatch({ type: "zoomToFit" }),
       frameSelection: () => dispatch({ type: "zoomToSelection" }),
       exportClip: () => void exportClip(),
-    }),
-    [editor.playhead, exportClip],
-  );
+    };
+  }, [editor.playhead, editor.keeps, playback.playing, exportClip]);
 
   useEffect(() => {
     if (meta === null) return;

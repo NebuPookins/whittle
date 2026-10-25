@@ -181,3 +181,25 @@ export function nearestWaypoint(
   if (eligible.length === 0) return null;
   return back ? Math.max(...eligible) : Math.min(...eligible);
 }
+
+/**
+ * Where the playhead lands to probe what can be cut next, like one step of a
+ * binary search: the midpoint of the longer end stretch — from the selection's
+ * start to its first interior keep pin, or from its last interior pin to its
+ * end — since that is where the biggest cut could still be hiding. A tie goes
+ * to the front. Pins outside the selection, or on its edges, are ignored.
+ */
+export function probePoint(selection: Clip, keeps: readonly number[]): number {
+  const inside = keeps.filter(
+    (k) =>
+      k > selection.start &&
+      k < selection.end &&
+      !sameTime(k, selection.start) &&
+      !sameTime(k, selection.end),
+  );
+  const first = Math.min(selection.end, ...inside);
+  const last = Math.max(selection.start, ...inside);
+  return first - selection.start >= selection.end - last
+    ? (selection.start + first) / 2
+    : (last + selection.end) / 2;
+}

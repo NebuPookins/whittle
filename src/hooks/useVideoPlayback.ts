@@ -57,6 +57,12 @@ export interface VideoPlayback {
   readonly setRate: (r: PlaybackRate) => void;
 }
 
+function syncToPlayhead(element: HTMLVideoElement, playhead: number): void {
+  if (Math.abs(element.currentTime - playhead) > SYNC_EPSILON) {
+    element.currentTime = playhead;
+  }
+}
+
 /**
  * Bind a `<video>` element to the editor's playhead.
  *
@@ -94,10 +100,18 @@ export function useVideoPlayback(
   // Push external seeks into the element.
   useEffect(() => {
     if (element === null) return;
-    if (Math.abs(element.currentTime - playhead) > SYNC_EPSILON) {
-      element.currentTime = playhead;
-    }
+    syncToPlayhead(element, playhead);
   }, [element, playhead]);
+
+  // A new source rewinds the element to 0 without the playhead changing (e.g.
+  // reopening a file of the same length), so re-sync once each one loads.
+  // Subscribed once per element, not per playhead change (every frame in play).
+  useEffect(() => {
+    if (element === null) return;
+    const sync = () => syncToPlayhead(element, playheadRef.current);
+    element.addEventListener("loadedmetadata", sync);
+    return () => element.removeEventListener("loadedmetadata", sync);
+  }, [element]);
 
   // Apply volume and speed to the element. `defaultPlaybackRate` is set in
   // step with `playbackRate` because the browser resets the rate to it

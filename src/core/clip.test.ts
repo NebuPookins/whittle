@@ -10,6 +10,7 @@ import {
   nearestWaypoint,
   NO_MARKS,
   pendingClip,
+  probePoint,
   redo,
   reencodeSpan,
   undo,
@@ -242,5 +243,34 @@ describe("reencodeSpan", () => {
   it("re-encodes the whole clip when it holds fewer than two keyframes", () => {
     expect(reencodeSpan({ start: 3.3, end: 4.0 }, KF, 30)).toBeCloseTo(0.7);
     expect(reencodeSpan({ start: 3.3, end: 3.4 }, [], 30)).toBeCloseTo(0.1);
+  });
+});
+
+describe("probePoint", () => {
+  const SEL: Clip = { start: 0, end: 100 };
+
+  it("bisects the whole selection when nothing is pinned", () => {
+    expect(probePoint(SEL, [])).toBe(50);
+  });
+
+  it("bisects the front stretch when it is the longer end", () => {
+    expect(probePoint(SEL, [70])).toBe(35);
+  });
+
+  it("bisects the back stretch when it is the longer end", () => {
+    expect(probePoint(SEL, [30])).toBe(65);
+    expect(probePoint(SEL, [10, 70])).toBe(85);
+  });
+
+  it("prefers the front on a tie", () => {
+    expect(probePoint(SEL, [50])).toBe(25);
+  });
+
+  it("ignores pins outside or on the edges of the selection", () => {
+    expect(probePoint({ start: 50, end: 100 }, [10, 50, 60, 100, 120])).toBe(80);
+  });
+
+  it("does not depend on the order of the pins", () => {
+    expect(probePoint(SEL, [70, 10])).toBe(probePoint(SEL, [10, 70]));
   });
 });

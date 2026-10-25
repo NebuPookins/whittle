@@ -3,6 +3,7 @@ import {
   initHistory,
   NO_MARKS,
   pendingClip,
+  probePoint,
   redo as redoHistory,
   undo as undoHistory,
   type Clip,
@@ -43,6 +44,8 @@ export type EditorAction =
   | { readonly type: "zoom"; readonly factor: number; readonly focus: number }
   | { readonly type: "zoomToFit" }
   | { readonly type: "zoomToSelection" }
+  /** Jump the playhead to the next point worth checking (see `probePoint`). */
+  | { readonly type: "probe" }
   | { readonly type: "pan"; readonly delta: number };
 
 export function initEditor(duration: number): EditorState {
@@ -52,7 +55,8 @@ export function initEditor(duration: number): EditorState {
     marks: NO_MARKS,
     keeps: [],
     view: history.clip,
-    playhead: history.clip.start,
+    // Open on the middle: the first probe of the binary search.
+    playhead: (history.clip.start + history.clip.end) / 2,
   };
 }
 
@@ -158,6 +162,12 @@ export function editorReducer(
         ),
       };
     }
+
+    case "probe":
+      return {
+        ...state,
+        playhead: probePoint(pendingClip(clip, state.marks), state.keeps),
+      };
 
     case "pan":
       return { ...state, view: panBy(state.view, action.delta, clip) };
