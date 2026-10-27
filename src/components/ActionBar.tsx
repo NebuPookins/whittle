@@ -30,6 +30,8 @@ interface Props {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly exporting: boolean;
+  /** Save As has to wait: a stream copy needs the finished keyframe list to pick its start. */
+  readonly awaitingKeyframes: boolean;
   /** The mode Save As will really use — the toggle, unless the file overrides it. */
   readonly mode: ExportMode;
   readonly frameAccurate: FrameAccurateSupport;
@@ -125,6 +127,7 @@ export function ActionBar({
   canUndo,
   canRedo,
   exporting,
+  awaitingKeyframes,
   mode,
   frameAccurate,
   onFrameAccurateChange,
@@ -245,8 +248,12 @@ export function ActionBar({
         <button
           className="primary"
           onClick={actions.exportClip}
-          disabled={exporting}
-          title="Write the current range to a new file (Ctrl+S)"
+          disabled={exporting || awaitingKeyframes}
+          title={
+            awaitingKeyframes
+              ? "Waiting for the keyframe scan to settle where the cut starts"
+              : "Write the current range to a new file (Ctrl+S)"
+          }
         >
           {exporting ? "Saving…" : "Save As…"}
         </button>

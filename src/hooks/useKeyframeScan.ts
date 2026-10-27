@@ -17,6 +17,13 @@ export interface KeyframeScan {
 }
 
 const IDLE: KeyframeScan = { keyframes: [], scanning: false, error: null };
+const STARTING: KeyframeScan = { keyframes: [], scanning: true, error: null };
+
+/** A scan result, tagged with the file it describes. */
+interface Owned {
+  readonly meta: VideoMetadata | null;
+  readonly scan: KeyframeScan;
+}
 
 let nextScanId = 1;
 
@@ -28,18 +35,20 @@ let nextScanId = 1;
  * ffprobe processes race.
  */
 export function useKeyframeScan(meta: VideoMetadata | null): KeyframeScan {
-  const [scan, setScan] = useState<KeyframeScan>(IDLE);
+  const [owned, setOwned] = useState<Owned>({ meta: null, scan: IDLE });
   const currentId = useRef(0);
 
   useEffect(() => {
     if (meta === null) {
-      setScan(IDLE);
+      setOwned({ meta, scan: IDLE });
       return;
     }
 
     const scanId = nextScanId++;
     currentId.current = scanId;
-    setScan({ keyframes: [], scanning: true, error: null });
+    setOwned({ meta, scan: STARTING });
+    const setScan = (update: (prev: KeyframeScan) => KeyframeScan): void =>
+      setOwned((prev) => ({ meta, scan: update(prev.scan) }));
 
     let disposed = false;
     const offs: UnlistenFn[] = [];
@@ -69,7 +78,7 @@ export function useKeyframeScan(meta: VideoMetadata | null): KeyframeScan {
 
     begin().catch((e: unknown) => {
       if (disposed) return;
-      setScan({ keyframes: [], scanning: false, error: String(e) });
+      setScan(() => ({ keyframes: [], scanning: false, error: String(e) }));
     });
 
     return () => {
@@ -81,5 +90,8 @@ export function useKeyframeScan(meta: VideoMetadata | null): KeyframeScan {
     };
   }, [meta]);
 
-  return scan;
+  // Until the effect catches up with a newly opened file, the state still
+  // describes the previous one; its keyframes must not be snapped against.
+  if (owned.meta === meta) return owned.scan;
+  return meta === null ? IDLE : STARTING;
 }

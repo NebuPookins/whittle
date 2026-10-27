@@ -52,6 +52,9 @@ const ZOOM_OUT = 1.6;
 const DRIFT_FLOOR = 0.5;
 const DRIFT_FRACTION = 0.03;
 
+/** Shared so an unsettled scan keeps one identity as its batches stream in. */
+const NO_KEYFRAMES: readonly number[] = [];
+
 let nextToastId = 1;
 
 export default function App() {
@@ -72,17 +75,21 @@ export default function App() {
   const clip = editor.history.clip;
   const pending = useMemo(() => pendingClip(clip, editor.marks), [clip, editor.marks]);
   // Save As writes what is highlighted, so the cut note describes that range.
-  // A failed scan leaves a partial keyframe list; snap against it and the
-  // reported cut point would be wrong, so treat it as unknown instead.
+  // A scan still running or one that failed leaves a partial keyframe list;
+  // snap against it and the cut lands on whatever keyframe has streamed in so
+  // far — possibly minutes before the in-point — so treat it as unknown.
   const keyframes = useMemo(
-    () => (scan.error === null ? scan.keyframes : []),
-    [scan.keyframes, scan.error],
+    () => (scan.scanning || scan.error !== null ? NO_KEYFRAMES : scan.keyframes),
+    [scan.keyframes, scan.scanning, scan.error],
   );
   // The toggle is a wish; the backend decides whether it can be granted.
   const mode =
     meta === null
       ? "keyframeCopy"
       : exportModeFor(wantsFrameAccurate, meta.frameAccurate);
+  // A stream copy must start on a keyframe, and until the scan settles there
+  // is no knowing which one. A frame-accurate export finds its own.
+  const awaitingKeyframes = mode === "keyframeCopy" && scan.scanning;
   const cut = useMemo(
     () => effectiveCut(pending, keyframes, mode),
     [pending, keyframes, mode],
@@ -90,10 +97,10 @@ export default function App() {
   const frameRate = meta?.frameRate ?? null;
   const reencode = useMemo(
     () =>
-      mode === "frameAccurate" && !scan.scanning && keyframes.length > 0
+      mode === "frameAccurate" && keyframes.length > 0
         ? reencodeSpan(pending, keyframes, frameRate)
         : null,
-    [mode, pending, keyframes, scan.scanning, frameRate],
+    [mode, pending, keyframes, frameRate],
   );
   const src = useMemo(
     () => (meta === null ? null : previewUrl(meta.previewBaseUrl, meta.previewToken)),
@@ -229,6 +236,15 @@ export default function App() {
 
   const exportClip = useCallback(async () => {
     if (meta === null || exporting) return;
+    if (awaitingKeyframes) {
+      // The button says so on hover; Ctrl+S has no other way to explain itself.
+      notify(
+        "ok",
+        "Still scanning keyframes",
+        "Save As will be ready once the scan settles where the cut starts.",
+      );
+      return;
+    }
 
     const { ext } = splitExtension(meta.path);
     try {
@@ -266,7 +282,7 @@ export default function App() {
     } finally {
       setExporting(false);
     }
-  }, [meta, exporting, cut, mode, notify]);
+  }, [meta, exporting, awaitingKeyframes, cut, mode, notify]);
 
   /* ---------- keyboard ---------- */
 
@@ -476,6 +492,7 @@ export default function App() {
             canUndo={canUndo(editor.history)}
             canRedo={canRedo(editor.history)}
             exporting={exporting}
+            awaitingKeyframes={awaitingKeyframes}
             mode={mode}
             frameAccurate={meta.frameAccurate}
             onFrameAccurateChange={setWantsFrameAccurate}
