@@ -22,26 +22,38 @@ export function VideoStage({
   playback,
   onJump,
 }: Props) {
+  const {
+    attach,
+    toggle,
+    step,
+    failure,
+    playing,
+    volume,
+    muted,
+    setVolume,
+    toggleMute,
+    rate,
+    setRate,
+  } = playback;
   const hasAudio = meta.audioCodec !== null;
-  const muted = playback.muted;
   const muteLabel = muted ? "Unmute" : "Mute";
-  const slowerRate = adjacentPlaybackRate(playback.rate, "slower");
-  const fasterRate = adjacentPlaybackRate(playback.rate, "faster");
+  const slowerRate = adjacentPlaybackRate(rate, "slower");
+  const fasterRate = adjacentPlaybackRate(rate, "faster");
 
   return (
     <>
       <div className="video-wrap">
         {/* Streamed from disk over Tauri's asset protocol. */}
         <video
-          ref={playback.attach}
+          ref={attach}
           src={src}
           preload="auto"
-          onClick={playback.toggle}
+          onClick={toggle}
         />
-        {playback.failure !== null && (
+        {failure !== null && (
           <div className="video-error" role="alert">
             <b>Preview unavailable</b>
-            <span>{describeFailure(playback.failure)}</span>
+            <span>{describeFailure(failure)}</span>
           </div>
         )}
         <div className="video-badge">
@@ -61,7 +73,7 @@ export function VideoStage({
         </button>
         <button
           className="icon"
-          onClick={() => playback.step(-1)}
+          onClick={() => step(-1)}
           title="Back one frame (←, Shift+← for ten)"
           aria-label="Back one frame"
         >
@@ -69,15 +81,15 @@ export function VideoStage({
         </button>
         <button
           className="icon"
-          onClick={playback.toggle}
+          onClick={toggle}
           title="Play / pause (Space)"
-          aria-label={playback.playing ? "Pause" : "Play"}
+          aria-label={playing ? "Pause" : "Play"}
         >
-          {playback.playing ? "❙❙" : "▶"}
+          {playing ? "❙❙" : "▶"}
         </button>
         <button
           className="icon"
-          onClick={() => playback.step(1)}
+          onClick={() => step(1)}
           title="Forward one frame (→, Shift+→ for ten)"
           aria-label="Forward one frame"
         >
@@ -106,7 +118,7 @@ export function VideoStage({
         <div className="transport__volume">
           <button
             className="icon"
-            onClick={playback.toggleMute}
+            onClick={toggleMute}
             disabled={!hasAudio}
             title={hasAudio ? muteLabel : "No audio track"}
             aria-label={hasAudio ? muteLabel : "No audio track"}
@@ -119,8 +131,8 @@ export function VideoStage({
             min={0}
             max={100}
             step={1}
-            value={Math.round(playback.volume * 100)}
-            onChange={(e) => playback.setVolume(Number(e.target.value) / 100)}
+            value={Math.round(volume * 100)}
+            onChange={(e) => setVolume(Number(e.target.value) / 100)}
             disabled={!hasAudio}
             aria-label="Volume"
             title={hasAudio ? "Volume" : "No audio track"}
@@ -130,7 +142,7 @@ export function VideoStage({
         <div className="transport__speed">
           <button
             className="icon"
-            onClick={() => slowerRate !== null && playback.setRate(slowerRate)}
+            onClick={() => slowerRate !== null && setRate(slowerRate)}
             disabled={slowerRate === null}
             title="Decrease playback speed"
             aria-label="Decrease playback speed"
@@ -138,12 +150,12 @@ export function VideoStage({
             −
           </button>
           <select
-            value={String(playback.rate)}
+            value={String(rate)}
             onChange={(e) => {
               const selected = PLAYBACK_RATES.find(
-                (rate) => String(rate) === e.target.value,
+                (option) => String(option) === e.target.value,
               );
-              if (selected !== undefined) playback.setRate(selected);
+              if (selected !== undefined) setRate(selected);
             }}
             aria-label="Playback speed"
             title="Playback speed"
@@ -156,7 +168,7 @@ export function VideoStage({
           </select>
           <button
             className="icon"
-            onClick={() => fasterRate !== null && playback.setRate(fasterRate)}
+            onClick={() => fasterRate !== null && setRate(fasterRate)}
             disabled={fasterRate === null}
             title="Increase playback speed"
             aria-label="Increase playback speed"

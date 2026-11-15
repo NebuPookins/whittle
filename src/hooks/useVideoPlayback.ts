@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
 
 import type { Clip } from "../core/clip";
 import { errInfo, failureFromCode, failureFromPlayRejection, type MediaFailure } from "../core/media";
@@ -89,13 +89,11 @@ export function useVideoPlayback(
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState<PlaybackRate>(1);
 
-  // Latest values for the rAF loop and callbacks, without re-subscribing.
-  const clipRef = useRef(clip);
-  clipRef.current = clip;
-  const playheadRef = useRef(playhead);
-  playheadRef.current = playhead;
-  const positionRef = useRef(onPosition);
-  positionRef.current = onPosition;
+  // Latest values for the rAF loop and the media listeners, without
+  // re-subscribing them. Only effects call these.
+  const currentClip = useEffectEvent(() => clip);
+  const currentPlayhead = useEffectEvent(() => playhead);
+  const reportPosition = useEffectEvent((t: number) => onPosition(t));
 
   // Push external seeks into the element.
   useEffect(() => {
@@ -108,7 +106,7 @@ export function useVideoPlayback(
   // Subscribed once per element, not per playhead change (every frame in play).
   useEffect(() => {
     if (element === null) return;
-    const sync = () => syncToPlayhead(element, playheadRef.current);
+    const sync = () => syncToPlayhead(element, currentPlayhead());
     element.addEventListener("loadedmetadata", sync);
     return () => element.removeEventListener("loadedmetadata", sync);
   }, [element]);
@@ -119,6 +117,7 @@ export function useVideoPlayback(
   // fall back to 1× on the next file.
   useEffect(() => {
     if (element === null) return;
+    // eslint-disable-next-line react-hooks/immutability -- `element` is a DOM node held in state so effects re-run when it attaches; setting its properties is an intentional imperative DOM write
     element.volume = volume;
     element.muted = muted;
     element.playbackRate = rate;
@@ -227,16 +226,16 @@ export function useVideoPlayback(
 
     let frame = 0;
     const tick = () => {
-      const { start, end } = clipRef.current;
+      const { start, end } = currentClip();
       if (element.currentTime >= end) {
         element.pause();
         element.currentTime = end;
-        positionRef.current(end);
+        reportPosition(end);
       } else if (element.currentTime < start - SYNC_EPSILON) {
         element.currentTime = start;
-        positionRef.current(start);
+        reportPosition(start);
       } else {
-        positionRef.current(element.currentTime);
+        reportPosition(element.currentTime);
       }
       frame = requestAnimationFrame(tick);
     };
@@ -251,10 +250,11 @@ export function useVideoPlayback(
       return;
     }
     // Replay from the top rather than sitting stuck on the last frame.
-    const { start, end } = clipRef.current;
-    if (playheadRef.current >= end - 1e-3) {
+    const { start, end } = clip;
+    if (playhead >= end - 1e-3) {
+      // eslint-disable-next-line react-hooks/immutability -- `element` is a DOM node held in state; setting currentTime is an intentional imperative DOM write
       element.currentTime = start;
-      positionRef.current(start);
+      onPosition(start);
     }
     logUi(
       "video",
@@ -269,15 +269,15 @@ export function useVideoPlayback(
         if (refusal !== null) setFailure(refusal);
       },
     );
-  }, [element]);
+  }, [element, clip, playhead, onPosition]);
 
   const step = useCallback(
     (frames: number) => {
       element?.pause();
       const fps = frameRate !== null && frameRate > 0 ? frameRate : FALLBACK_FPS;
-      positionRef.current(playheadRef.current + frames / fps);
+      onPosition(playhead + frames / fps);
     },
-    [element, frameRate],
+    [element, frameRate, playhead, onPosition],
   );
 
   const changeVolume = (v: number) => {

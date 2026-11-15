@@ -39,16 +39,17 @@ export function useKeyframeScan(meta: VideoMetadata | null): KeyframeScan {
   const currentId = useRef(0);
 
   useEffect(() => {
-    if (meta === null) {
-      setOwned({ meta, scan: IDLE });
-      return;
-    }
+    if (meta === null) return;
 
     const scanId = nextScanId++;
     currentId.current = scanId;
-    setOwned({ meta, scan: STARTING });
+    // State left over from another file is discarded here rather than reset
+    // up front: the render below already reports it as not belonging to `meta`.
     const setScan = (update: (prev: KeyframeScan) => KeyframeScan): void =>
-      setOwned((prev) => ({ meta, scan: update(prev.scan) }));
+      setOwned((prev) => ({
+        meta,
+        scan: update(prev.meta === meta ? prev.scan : STARTING),
+      }));
 
     let disposed = false;
     const offs: UnlistenFn[] = [];
@@ -90,8 +91,8 @@ export function useKeyframeScan(meta: VideoMetadata | null): KeyframeScan {
     };
   }, [meta]);
 
-  // Until the effect catches up with a newly opened file, the state still
-  // describes the previous one; its keyframes must not be snapped against.
+  // State describing another file (or none) must not be snapped against; a
+  // scan that has not reported yet is just starting.
   if (owned.meta === meta) return owned.scan;
   return meta === null ? IDLE : STARTING;
 }

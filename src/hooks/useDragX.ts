@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 
 /**
  * Turn a pointerdown into a horizontal drag that keeps tracking outside the
@@ -9,8 +9,11 @@ export function useDragX(
 ): (event: React.PointerEvent) => void {
   // Held in a ref so the listeners always call the latest closure without
   // needing to be torn down and re-attached on every render.
+  // Synced in a layout effect, so it is current before any pointer event.
   const latest = useRef(onDrag);
-  latest.current = onDrag;
+  useLayoutEffect(() => {
+    latest.current = onDrag;
+  }, [onDrag]);
 
   return useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return;

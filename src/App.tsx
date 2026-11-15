@@ -36,6 +36,7 @@ import {
   probeFile,
   toAppError,
 } from "./ipc";
+import { errInfo } from "./core/media";
 import type { ToolStatus, VideoMetadata } from "./types";
 
 const ZOOM_IN = 1 / 1.6;
@@ -56,6 +57,24 @@ const DRIFT_FRACTION = 0.03;
 const NO_KEYFRAMES: readonly number[] = [];
 
 let nextToastId = 1;
+
+/**
+ * Look for ffmpeg/ffprobe. A failed probe is treated as "neither found" so the
+ * setup screen appears, but the cause is logged rather than swallowed.
+ */
+async function probeTools(): Promise<ToolStatus> {
+  try {
+    return await checkTools();
+  } catch (e: unknown) {
+    const { name, detail } = errInfo(e);
+    logUi(
+      "tools",
+      `checkTools() failed, treating ffmpeg/ffprobe as missing: ${name}: ${detail}` +
+        (e instanceof Error && e.stack ? `\n${e.stack}` : ""),
+    );
+    return { ffmpeg: null, ffprobe: null };
+  }
+}
 
 export default function App() {
   const [tools, setTools] = useState<ToolStatus | null>(null);
@@ -170,18 +189,21 @@ export default function App() {
 
   /* ---------- tool detection ---------- */
 
-  const detectTools = useCallback(async () => {
+  // Retry from the setup screen: show the spinner again, then re-probe.
+  const detectTools = useCallback(() => {
     setTools(null);
-    try {
-      setTools(await checkTools());
-    } catch {
-      setTools({ ffmpeg: null, ffprobe: null });
-    }
+    void probeTools().then(setTools);
   }, []);
 
   useEffect(() => {
-    void detectTools();
-  }, [detectTools]);
+    let cancelled = false;
+    void probeTools().then((found) => {
+      if (!cancelled) setTools(found);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /* ---------- opening files ---------- */
 
@@ -287,7 +309,7 @@ export default function App() {
   /* ---------- keyboard ---------- */
 
   const actions: ActionHandlers = useMemo(() => {
-    // Each mark sets up the next step of the binary search — except while
+    // Each mark sets up the next step of the search — except while
     // playing, where reframing or jumping would pull the view and the video
     // out from under the user.
     const paused = !playback.playing;
@@ -424,7 +446,7 @@ export default function App() {
   if (tools.ffmpeg === null || tools.ffprobe === null) {
     return (
       <div className="app">
-        <SetupScreen tools={tools} onRetry={() => void detectTools()} />
+        <SetupScreen tools={tools} onRetry={detectTools} />
       </div>
     );
   }
