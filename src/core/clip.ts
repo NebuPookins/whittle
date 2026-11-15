@@ -182,12 +182,29 @@ export function nearestWaypoint(
   return back ? Math.max(...eligible) : Math.min(...eligible);
 }
 
+/** The smallest step `probePoint` takes outward from the keep pins, in seconds. */
+const MIN_PROBE_STEP = 10;
+
 /**
- * Where the playhead lands to probe what can be cut next, like one step of a
- * binary search: the midpoint of the longer end stretch — from the selection's
- * start to its first interior keep pin, or from its last interior pin to its
- * end — since that is where the biggest cut could still be hiding. A tie goes
- * to the front. Pins outside the selection, or on its edges, are ignored.
+ * `probePoint` bisects instead of stepping unless the step leaves at least
+ * this fraction of the stretch beyond it; a probe that lands a hair short of
+ * the edge would show almost nothing new.
+ */
+const MIN_LEFTOVER_FRACTION = 0.1;
+
+/**
+ * Where the playhead lands to probe what can be cut next. It looks in the
+ * longer end stretch — from the selection's start to its first interior keep
+ * pin, or from its last interior pin to its end — since that is where the
+ * biggest cut could still be hiding. A tie goes to the front.
+ *
+ * Clips are usually short, so rather than bisecting that stretch outright it
+ * steps outward from the pins by the span they already cover (first pin to
+ * last pin), but never less than `MIN_PROBE_STEP`. When that step would leave
+ * less than `MIN_LEFTOVER_FRACTION` of the stretch beyond it (or reach past
+ * the edge), or nothing is pinned, it falls back to the stretch's midpoint,
+ * like one step of a binary search. Pins outside the selection, or on its
+ * edges, are ignored.
  */
 export function probePoint(selection: Clip, keeps: readonly number[]): number {
   const inside = keeps.filter(
@@ -197,9 +214,18 @@ export function probePoint(selection: Clip, keeps: readonly number[]): number {
       !sameTime(k, selection.start) &&
       !sameTime(k, selection.end),
   );
-  const first = Math.min(selection.end, ...inside);
-  const last = Math.max(selection.start, ...inside);
-  return first - selection.start >= selection.end - last
-    ? (selection.start + first) / 2
-    : (last + selection.end) / 2;
+  if (inside.length === 0) return (selection.start + selection.end) / 2;
+
+  const first = Math.min(...inside);
+  const last = Math.max(...inside);
+  const step = Math.max(last - first, MIN_PROBE_STEP);
+
+  const front = first - selection.start >= selection.end - last;
+  const [anchor, edge, direction] = front
+    ? [first, selection.start, -1]
+    : [last, selection.end, 1];
+  const stretch = Math.abs(edge - anchor);
+  return step < (1 - MIN_LEFTOVER_FRACTION) * stretch
+    ? anchor + direction * step
+    : (anchor + edge) / 2;
 }

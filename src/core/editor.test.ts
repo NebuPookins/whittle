@@ -278,9 +278,9 @@ describe("load", () => {
 });
 
 describe("probe", () => {
-  it("bisects the longer end stretch of the pending selection", () => {
+  it("probes the longer end stretch of the pending selection", () => {
     // 10-minute file, discard before 1m, discard after 9m, keep at 7m: the 6m
-    // stretch before the pin beats the 2m one after it.
+    // stretch before the pin beats the 2m one after it, so probe just before it.
     const s = run(
       initEditor(600),
       { type: "markIn", time: 60 },
@@ -288,18 +288,18 @@ describe("probe", () => {
       { type: "markKeep", time: 420 },
       { type: "probe" },
     );
-    expect(s.playhead).toBe(240);
+    expect(s.playhead).toBe(410);
     expectConsistent(s);
   });
 
-  it("bisects the back stretch once it becomes the longer end", () => {
+  it("probes the back stretch once it becomes the longer end", () => {
     const s = run(
       fresh(),
       { type: "markKeep", time: 40 },
       { type: "markIn", time: 20 },
       { type: "probe" },
     );
-    expect(s.playhead).toBe(70);
+    expect(s.playhead).toBe(50);
   });
 
   it("follows the committed clip once the marks are gone", () => {

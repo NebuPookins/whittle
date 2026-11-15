@@ -253,21 +253,47 @@ describe("probePoint", () => {
     expect(probePoint(SEL, [])).toBe(50);
   });
 
-  it("bisects the front stretch when it is the longer end", () => {
-    expect(probePoint(SEL, [70])).toBe(35);
+  it("steps 10s before a lone pin when the front is the longer end", () => {
+    expect(probePoint(SEL, [70])).toBe(60);
   });
 
-  it("bisects the back stretch when it is the longer end", () => {
-    expect(probePoint(SEL, [30])).toBe(65);
-    expect(probePoint(SEL, [10, 70])).toBe(85);
+  it("steps 10s after a lone pin when the back is the longer end", () => {
+    expect(probePoint(SEL, [30])).toBe(40);
+  });
+
+  it("steps outward by the pinned span", () => {
+    // Pins 10..20 span 10; the back stretch (80) is longer.
+    expect(probePoint(SEL, [10, 15, 20])).toBe(30);
+    // Pins 60..75 span 15; the front stretch (60) is longer.
+    expect(probePoint(SEL, [75, 60])).toBe(45);
+  });
+
+  it("steps at least 10s even when the pins sit close together", () => {
+    expect(probePoint(SEL, [30, 30.04])).toBeCloseTo(40.04);
+  });
+
+  it("bisects the stretch when the step would reach or pass the selection's edge", () => {
+    // Span 40: 60 + 40 lands on the end, so bisect the back stretch.
+    expect(probePoint(SEL, [20, 60])).toBe(80);
+    // Span 40: 40 - 40 lands on the start, so bisect the front stretch.
+    expect(probePoint(SEL, [40, 80])).toBe(20);
+    // A lone pin whose fixed step overshoots.
+    expect(probePoint({ start: 0, end: 15 }, [5])).toBe(10);
+  });
+
+  it("bisects the stretch when the step would land just short of the edge", () => {
+    // Span 39.99 from 59.99 lands 0.02s before the end: too little left to learn from.
+    expect(probePoint(SEL, [20, 59.99])).toBeCloseTo(79.995);
+    // A lone pin whose 10s step leaves only 0.5s of a 10.5s stretch.
+    expect(probePoint({ start: 0, end: 15.5 }, [5])).toBeCloseTo(10.25);
   });
 
   it("prefers the front on a tie", () => {
-    expect(probePoint(SEL, [50])).toBe(25);
+    expect(probePoint(SEL, [50])).toBe(40);
   });
 
   it("ignores pins outside or on the edges of the selection", () => {
-    expect(probePoint({ start: 50, end: 100 }, [10, 50, 60, 100, 120])).toBe(80);
+    expect(probePoint({ start: 50, end: 100 }, [10, 50, 60, 100, 120])).toBe(70);
   });
 
   it("does not depend on the order of the pins", () => {

@@ -55,7 +55,7 @@ export function initEditor(duration: number): EditorState {
     marks: NO_MARKS,
     keeps: [],
     view: history.clip,
-    // Open on the middle: the first probe of the binary search.
+    // Open on the middle: nothing is pinned yet, so the first probe bisects.
     playhead: (history.clip.start + history.clip.end) / 2,
   };
 }
