@@ -5,6 +5,7 @@ pub mod keyframes;
 pub mod preview;
 pub mod proc;
 pub mod probe;
+mod scratch;
 pub mod smartcut;
 pub mod trim;
 

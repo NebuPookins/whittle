@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppError;
 use crate::proc::{ffmpeg_base, format_ts, run, strings};
 use crate::probe::{metadata_args, parse_metadata};
+use crate::scratch::Scratch;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,11 +110,32 @@ pub fn export(
     validate_range(start, end)?;
     ensure_distinct(input, dest)?;
 
+    // ffmpeg is written to a staging file and only renamed over `dest` once it
+    // has succeeded. Writing to `dest` directly would truncate a file the user
+    // chose to replace the moment ffmpeg started, so a failed export (a full
+    // disk, a muxer error, a crash) would destroy it and leave a partial file
+    // in its place. The staging file keeps `dest`'s name, so ffmpeg picks the
+    // same muxer from its extension.
+    let dest_path = Path::new(dest);
+    let name = dest_path
+        .file_name()
+        .ok_or_else(|| AppError::invalid("Choose a file to save to, not a folder."))?;
+    let scratch = Scratch::beside(dest_path)?;
+    let staged = scratch.output(name)?;
+    let staged_str = staged.to_string_lossy();
+
     // What was actually cut: the request, unless a smart cut snapped it to frames.
     let cut = match mode {
-        ExportMode::KeyframeCopy => run("ffmpeg", &trim_args(input, start, end, dest)).map(|_| start..end)?,
-        ExportMode::FrameAccurate => crate::smartcut::export(input, start, end, dest)?,
+        ExportMode::KeyframeCopy => run("ffmpeg", &trim_args(input, start, end, &staged_str)).map(|_| start..end)?,
+        ExportMode::FrameAccurate => crate::smartcut::export(input, start, end, &scratch, &staged_str)?,
     };
+    // Flushed first, or after a power loss the rename could reach the disk
+    // before the data and leave `dest` empty, the very loss this prevents.
+    std::fs::File::open(&staged)?.sync_all()?;
+    // Same filesystem, so this is an atomic replace rather than a copy. It
+    // replaces `dest` itself: a symlink there is swapped for the new file
+    // rather than written through, and the old file's permissions go with it.
+    std::fs::rename(&staged, dest_path)?;
 
     // Verify rather than assume, so the UI can show real keyframe drift instead
     // of the requested figure. The file is already written by this point, so a
@@ -135,7 +157,7 @@ pub fn export(
         Some(meta) => (meta.duration, meta.size_bytes),
         None => (
             cut.end - cut.start,
-            std::fs::metadata(Path::new(dest)).map(|m| m.len()).unwrap_or(0),
+            std::fs::metadata(dest_path).map(|m| m.len()).unwrap_or(0),
         ),
     };
 
